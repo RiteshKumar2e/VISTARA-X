@@ -1,0 +1,4 @@
+# Optional perception stack for real YOLOv8 inference (CPU is sufficient).
+ultralytics==8.3.174
+torch>=2.2
+torchvision>=0.17

@@ -1,0 +1,80 @@
+/* VISTARA-X design tokens. One accent (muted teal) on a warm neutral base. */
+:root {
+  /* Colour */
+  --color-bg: #f6f5f2;
+  --color-surface: #ffffff;
+  --color-surface-muted: #efede8;
+  --color-border: #dedad2;
+  --color-border-strong: #c3beb4;
+  --color-text: #1b1d1f;
+  --color-text-muted: #545a60; /* 6.6:1 on bg */
+  --color-text-faint: #6b7076; /* 4.9:1 on bg */
+
+  --color-accent: #0f6e6a; /* 6.0:1 on white */
+  --color-accent-strong: #0b5653;
+  --color-accent-soft: #e1eeec;
+  --color-on-accent: #ffffff;
+
+  --color-success: #2e6b34;
+  --color-success-soft: #e5efe4;
+  --color-warning: #8a5300;
+  --color-warning-soft: #fbf0db;
+  --color-danger: #a12f29;
+  --color-danger-soft: #f8e4e2;
+
+  /* Map palette */
+  --map-floor: #fbfaf8;
+  --map-grid: #ebe8e2;
+  --map-static: #cfc9be;
+  --map-static-edge: #a49d90;
+  --map-dynamic: #e7b960;
+  --map-dynamic-edge: #9a6a12;
+  --map-person: #3a5a78;
+  --map-inflation: rgba(161, 47, 41, 0.35);
+  --map-path: #0f6e6a;
+  --map-trail: #9aa0a6;
+  --map-track: #a12f29;
+  --map-unknown: #e4e1da;
+  --map-robot: #1b1d1f;
+
+  /* Typography */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    "Noto Sans", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, "Liberation Mono", monospace;
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: clamp(1.25rem, 1.1rem + 0.6vw, 1.5rem);
+  --text-2xl: clamp(1.6rem, 1.3rem + 1.4vw, 2.25rem);
+  --text-3xl: clamp(2rem, 1.5rem + 2.6vw, 3.25rem);
+  --leading-tight: 1.2;
+  --leading-normal: 1.55;
+
+  /* Spacing (4px base) */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 3rem;
+  --space-8: 4.5rem;
+
+  /* Shape */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --border: 1px solid var(--color-border);
+
+  /* Focus */
+  --focus-ring: 0 0 0 2px var(--color-bg), 0 0 0 4px var(--color-accent);
+
+  --content-max: 1440px;
+  --transition: 140ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --transition: 0ms;
+  }
+}

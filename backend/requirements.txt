@@ -1,0 +1,14 @@
+# Core API + simulation (required)
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+pydantic==2.13.5
+numpy==1.26.4
+opencv-python-headless>=4.9,<5
+
+# Tests
+pytest==8.3.4
+httpx==0.28.1
+
+# Optional: real YOLOv8 inference. Without these (or without weights in
+# backend/models/yolov8n.pt) the backend runs the labelled simulated detector.
+# Install with:  pip install -r requirements-ml.txt
