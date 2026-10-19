@@ -423,7 +423,7 @@ export function drawScene(ctx, view, world, state, opts) {
       }
     }
 
-    if (layers.tracks) {
+    if (layers.sensor) {
       for (const tr of t.perception?.tracks || []) {
         const cx = X(tr.x);
         const cy = Y(tr.y);
@@ -440,7 +440,7 @@ export function drawScene(ctx, view, world, state, opts) {
       }
     }
 
-    if (layers.fov) {
+    if (layers.sensor) {
       const half = ((FOV_DEG / 2) * Math.PI) / 180;
       const grad = ctx.createRadialGradient(X(pose.x), Y(pose.y), 0, X(pose.x), Y(pose.y), CAMERA_RANGE * scale);
       grad.addColorStop(0, pal.fov);
@@ -468,7 +468,7 @@ export function drawScene(ctx, view, world, state, opts) {
     }
 
     // Previous route, fading out after a genuine replan.
-    if (anim.ghost && effects !== null) {
+    if (layers.route && anim.ghost) {
       const age = (now - anim.ghostStart) / GHOST_MS;
       if (age < 1) {
         ctx.save();
@@ -487,7 +487,7 @@ export function drawScene(ctx, view, world, state, opts) {
 
     // Current A* route (revealed progressively after each new plan).
     const path = t.path || [];
-    if (path.length > 1) {
+    if (layers.route && path.length > 1) {
       const reveal = effects ? easeOut(Math.min(1, (now - anim.revealStart) / REVEAL_MS)) : 1;
       const shown = partialPath(path, reveal);
       ctx.strokeStyle = pal.path;

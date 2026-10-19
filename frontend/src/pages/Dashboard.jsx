@@ -17,15 +17,6 @@ import { API_BASE_URL, api } from '../services/api';
 const DEFAULT_WORLD = { width: 20, height: 12 };
 const MAX_LOCAL_EVENTS = 40;
 
-/** Hit-test an operator-added obstacle at a world point. */
-function addedObstacleAt(telemetry, { x, y }) {
-  return telemetry?.obstacles.find((o) => {
-    if (!o.id.startsWith('user-')) return false;
-    if (o.shape === 'circle') return Math.hypot(o.x - x, o.y - y) <= o.r + 0.15;
-    return Math.abs(o.x - x) <= o.w / 2 + 0.15 && Math.abs(o.y - y) <= o.h / 2 + 0.15;
-  });
-}
-
 /** Frontend-observed connection changes, merged into the event timeline. */
 function useConnectionEvents(connection, backendState) {
   const [events, setEvents] = useState([]);
@@ -98,28 +89,30 @@ export default function Dashboard() {
 
   const reject = (p) => setRejected({ ...p, at: performance.now() });
 
-  const onMapClick = async (p) => {
+  // A pick comes from either view: { point: {x, y} | null, obstacleId | null }.
+  const onMapClick = async ({ point, obstacleId }) => {
     if (!online) return;
-    const { x, y } = p;
-    const at = `(${x.toFixed(2)}, ${y.toFixed(2)})`;
     if (clickMode === 'obstacle') {
-      const hit = addedObstacleAt(telemetry, p);
-      if (hit) {
-        setSelectedObstacle((s) => (s === hit.id ? null : hit.id));
+      if (obstacleId?.startsWith('user-')) {
+        setSelectedObstacle((s) => (s === obstacleId ? null : obstacleId));
         return;
       }
+      if (!point) return;
+      const at = `(${point.x.toFixed(2)}, ${point.y.toFixed(2)})`;
       if (selectedObstacle) {
-        const ok = await command.run('map', () => api.moveObstacle(selectedObstacle, x, y), () => `Moved ${selectedObstacle} to ${at}`);
+        const ok = await command.run('map', () => api.moveObstacle(selectedObstacle, point.x, point.y), () => `Moved ${selectedObstacle} to ${at}`);
         if (ok) setSelectedObstacle(null);
-        else reject(p);
+        else reject(point);
         return;
       }
-      const ok = await command.run('map', () => api.addObstacle(x, y), (r) => `Obstacle ${r.obstacle.id} placed at ${at}`);
-      if (!ok) reject(p);
-    } else {
-      const ok = await command.run('map', () => api.setTarget(x, y), () => `Target set to ${at}`);
-      if (!ok) reject(p);
+      const ok = await command.run('map', () => api.addObstacle(point.x, point.y), (r) => `Obstacle ${r.obstacle.id} placed at ${at}`);
+      if (!ok) reject(point);
+      return;
     }
+    if (!point) return;
+    const at = `(${point.x.toFixed(2)}, ${point.y.toFixed(2)})`;
+    const ok = await command.run('map', () => api.setTarget(point.x, point.y), () => `Target set to ${at}`);
+    if (!ok) reject(point);
   };
 
   return (
@@ -158,6 +151,7 @@ export default function Dashboard() {
             telemetry={telemetry}
             world={world}
             clickMode={clickMode}
+            setClickMode={setClickMode}
             onMapClick={onMapClick}
             connection={connection}
             online={online}

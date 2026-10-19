@@ -167,3 +167,4 @@ def test_telemetry_is_versioned_and_serialisable(client):
     for key in ("goal_reached", "progress", "replans"):
         assert key in snap["mission"]
     assert "tracks" in snap["perception"] and "explored" in snap["perception"]
+    assert snap["perception"]["camera"] == {"fov_deg": 70.0, "height": 0.5, "range": 12.0, "forward_offset": 0.32}

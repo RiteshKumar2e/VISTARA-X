@@ -25,7 +25,8 @@ INTERNAL = {"/", "/mission", "/architecture", "/technology", "/privacy", "/terms
 @pytest.fixture(scope="session")
 def browser():
     with sync_playwright() as p:
-        b = p.chromium.launch()
+        # Software WebGL so the 3D viewport renders in headless CI.
+        b = p.chromium.launch(args=["--use-angle=swiftshader", "--enable-unsafe-swiftshader"])
         yield b
         b.close()
 
@@ -33,6 +34,8 @@ def browser():
 @pytest.fixture
 def page(browser):
     ctx = browser.new_context(viewport={"width": 1440, "height": 1000})
+    # Coordinate-exact tests use the 2D plan view; the 3D view has its own test below.
+    ctx.add_init_script("try { localStorage.setItem('vistara.view', 'plan') } catch (e) {}")
     pg = ctx.new_page()
     pg.errors = []
     pg.on("pageerror", lambda e: pg.errors.append(str(e)))
@@ -68,10 +71,10 @@ def open_console(page):
 
 
 def click_world(page, x, y):
-    """Click the canvas at world coordinates (matches SimulationViewport.layout)."""
-    box = page.locator(".viewport canvas").bounding_box()
+    """Click the plan-view canvas at world coordinates (matches renderer.makeView)."""
+    box = page.locator(".plan-view canvas").bounding_box()
     narrow = box["width"] < 520
-    left, right, top = (20 if narrow else 28), 8, 8
+    left, right, top = (20 if narrow else 28), 10, 10
     scale = (box["width"] - left - right) / 20
     page.mouse.click(box["x"] + left + x * scale, box["y"] + top + (12 - y) * scale)
 
@@ -230,6 +233,7 @@ def test_no_horizontal_overflow(browser, width):
 
 def test_mobile_menu_and_touch_target(browser):
     ctx = browser.new_context(viewport={"width": 375, "height": 812}, has_touch=True, is_mobile=True)
+    ctx.add_init_script("try { localStorage.setItem('vistara.view', 'plan') } catch (e) {}")
     page = ctx.new_page()
     backend(page, "post", "/simulation/reset", {"scenario": "warehouse"})
     page.goto(FRONTEND + "/")
@@ -247,9 +251,9 @@ def test_mobile_menu_and_touch_target(browser):
     # Tap the map to set a target.
     page.goto(FRONTEND + "/mission")
     expect(page.locator(".viewport [data-status]")).to_contain_text("Idle", timeout=15000)
-    box = page.locator(".viewport canvas").bounding_box()
-    scale = (box["width"] - 28) / 20
-    page.touchscreen.tap(box["x"] + 20 + 10 * scale, box["y"] + 8 + (12 - 6) * scale)
+    box = page.locator(".plan-view canvas").bounding_box()
+    scale = (box["width"] - 30) / 20
+    page.touchscreen.tap(box["x"] + 20 + 10 * scale, box["y"] + 10 + (12 - 6) * scale)
     expect(page.locator(".controls")).to_contain_text("Target set to", timeout=5000)
     ctx.close()
 
@@ -261,7 +265,7 @@ def test_backend_unreachable_state(browser):
     page.route_web_socket(f"{BACKEND.replace('http', 'ws')}/ws/telemetry", lambda ws: ws.close())
     page.goto(FRONTEND + "/mission")
     expect(page.get_by_role("alert")).to_contain_text("Backend unreachable", timeout=10000)
-    expect(page.locator(".viewport-overlay")).to_contain_text("Simulation unavailable", timeout=10000)
+    expect(page.locator(".viewport-overlay", has_text="Simulation unavailable")).to_be_visible(timeout=10000)
     expect(page.get_by_role("button", name="Run guided demo")).to_be_disabled()
     expect(page.locator(".system")).to_contain_text("Unavailable")
     page.screenshot(path=str(SHOTS / "backend-down.png"))
@@ -312,6 +316,42 @@ def test_overview_process_and_tooltips(page):
     page.keyboard.press("Escape")
 
 
+
+def test_3d_view_renders_and_selects_target(browser):
+    ctx = browser.new_context(viewport={"width": 1280, "height": 900})
+    page = ctx.new_page()
+    errors = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    backend(page, "post", "/simulation/reset", {"scenario": "warehouse"})
+    page.goto(FRONTEND + "/mission")
+    page.evaluate("try { localStorage.removeItem('vistara.view') } catch (e) {}")
+    page.reload()
+    canvas = page.locator(".view-3d canvas")
+    expect(canvas).to_be_visible(timeout=20000)
+    expect(page.get_by_role("button", name="3D", exact=True)).to_have_attribute("aria-pressed", "true")
+    expect(page.locator(".viewport")).not_to_contain_text("3D view unavailable")
+    # The orbit camera looks at the map centre, so a click in the middle of the canvas
+    # lands on the floor near (10, 6): the backend target must match.
+    page.wait_for_timeout(1500)
+    box = canvas.bounding_box()
+    page.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+    expect(page.locator(".controls")).to_contain_text("Target set to", timeout=5000)
+    t = telemetry(page)["target"]
+    assert abs(t["x"] - 10) < 0.6 and abs(t["y"] - 6) < 0.6, t
+    for name in ("Top", "Follow robot", "Orbit"):
+        page.get_by_role("button", name=name, exact=True).click()
+        expect(page.get_by_role("button", name=name, exact=True)).to_have_attribute("aria-pressed", "true")
+    page.get_by_role("button", name="Zoom in").click()
+    page.get_by_role("button", name="Reset view").click()
+    page.get_by_role("button", name="Plan", exact=True).click()
+    expect(page.locator(".plan-view canvas")).to_be_visible()
+    page.get_by_role("button", name="3D", exact=True).click()
+    expect(canvas).to_be_visible(timeout=20000)
+    page.screenshot(path=str(SHOTS / "viewport-3d.png"))
+    assert not errors, errors
+    ctx.close()
+
+
 SHOTS.mkdir(parents=True, exist_ok=True)
 
 
@@ -319,13 +359,11 @@ def test_viewport_zoom_effects_and_obstacle_move(page):
     open_console(page)
     stage = page.locator(".viewport")
     zoom_in = stage.get_by_role("button", name="Zoom in")
-    fit = stage.get_by_role("button", name="Reset view")
-    expect(fit).to_be_disabled()
     zoom_in.click()
     zoom_in.click()
-    expect(fit).to_be_enabled()
-    fit.click()
-    expect(fit).to_be_disabled()
+    expect(page.locator(".plan-view canvas")).to_have_class("sim-canvas zoomed")
+    stage.get_by_role("button", name="Reset view").click()
+    expect(page.locator(".plan-view canvas")).to_have_class("sim-canvas")
     effects = stage.get_by_label("Motion effects")
     effects.uncheck()
     expect(effects).not_to_be_checked()

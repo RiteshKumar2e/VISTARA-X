@@ -36,6 +36,7 @@ export default defineConfig(({ mode }) => {
     plugins: [react(), siteMetadata(env.VITE_SITE_URL || '')],
     server: { port: 5173, strictPort: true },
     preview: { port: 4173 },
-    build: { target: 'es2020', sourcemap: false },
+    // The lazily loaded 3D viewport (three.js) is ~590 kB raw / 150 kB gzip by design.
+    build: { target: 'es2020', sourcemap: false, chunkSizeWarningLimit: 650 },
   };
 });

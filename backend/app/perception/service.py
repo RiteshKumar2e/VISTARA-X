@@ -18,7 +18,8 @@ from ..scene.observation import ObservationMask
 from ..scene.tracker import ObstacleTracker
 from ..scene.understanding import summarise
 from ..simulation.physics import PYBULLET_AVAILABLE, PYBULLET_ERROR, PyBulletCamera
-from .camera import IMG_H, IMG_W, render, render_pybullet
+from ..simulation.world import ROBOT_RADIUS
+from .camera import CAM_HEIGHT, FOV, IMG_H, IMG_W, MAX_RANGE, render, render_pybullet
 from .detectors import SimulatedDetector, YoloDetector
 
 log = logging.getLogger("vistara.perception")
@@ -173,6 +174,13 @@ class PerceptionService:
                 "rate_hz": self.rate_hz,
                 "confidence_threshold": self.yolo.confidence,
                 "renderer": self.renderer,
+                # Actual sensor configuration, so overlays match what the camera sees.
+                "camera": {
+                    "fov_deg": round(math.degrees(FOV), 1),
+                    "height": CAM_HEIGHT,
+                    "range": MAX_RANGE,
+                    "forward_offset": round(ROBOT_RADIUS + 0.02, 3),
+                },
                 "renderer_note": self.renderer_note,
                 "yolo_available": self.yolo_available,
                 "yolo_status": self.yolo_reason,
