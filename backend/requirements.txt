@@ -9,6 +9,6 @@ opencv-python-headless>=4.9,<5
 pytest==8.3.4
 httpx==0.28.1
 
-# Optional: real YOLOv8 inference. Without these (or without weights in
+# Optional: PyBullet physics/camera and YOLOv8 inference. Without these (or without weights in
 # backend/models/yolov8n.pt) the backend runs the labelled simulated detector.
-# Install with:  pip install -r requirements-ml.txt
+# Install with:  pip install -r requirements-optional.txt

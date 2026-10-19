@@ -12,11 +12,11 @@ export default function NotFound() {
         The planner searched, but <span className="mono">{pathname}</span> is not on the map.
       </p>
       <p className="button-row">
-        <Link className="btn btn-primary" to="/">
+        <Link className="btn btn-primary" to="/mission">
           Back to the mission console
         </Link>
-        <Link className="btn" to="/about">
-          How it works
+        <Link className="btn" to="/">
+          Overview
         </Link>
       </p>
     </section>

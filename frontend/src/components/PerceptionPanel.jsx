@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Camera, ScanEye } from 'lucide-react';
 import { api } from '../services/api';
+import { CameraIcon } from './Icons';
 import { Badge } from './StatusBadge';
 
 const FRAME_EVERY = 2; // show every 2nd perception frame to limit image requests
@@ -118,7 +118,6 @@ export function PerceptionPanel({ telemetry, command, online }) {
     <section className="panel" aria-labelledby="perception-title">
       <div className="panel-head">
         <h2 id="perception-title">
-          <ScanEye size={18} aria-hidden="true" className="icon-inline" />
           Perception
         </h2>
         <Badge tone={isYolo ? 'accent' : 'warning'}>{p.source_label}</Badge>
@@ -159,7 +158,7 @@ export function PerceptionPanel({ telemetry, command, online }) {
             />
           ) : (
             <span className="camera-empty">
-              <Camera size={16} aria-hidden="true" />
+              <CameraIcon size={16} />
               {!p.enabled ? 'Frame processing is paused' : frameError ? 'Camera frame unavailable' : 'Waiting for camera frame'}
             </span>
           )}

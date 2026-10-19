@@ -62,8 +62,10 @@ class PyBulletScene:
         self.body_to_obstacle: dict[int, str] = {}
         self.walls: list[int] = []
         self._build_static()
+        # Non-zero mass so Bullet generates robot-vs-static contact pairs. We never call
+        # stepSimulation, so the body only moves when we place it (kinematic control).
         self.robot = self._make_cylinder(ROBOT_RADIUS, ROBOT_HEIGHT, (0, 0, ROBOT_HEIGHT / 2),
-                                         (0.95, 0.95, 0.95))
+                                         (0.95, 0.95, 0.95), mass=20.0)
 
     # ------------------------------------------------------------- building
     def _make_box(self, half, pos, rgb):
@@ -72,12 +74,12 @@ class PyBulletScene:
         vis = pb.createVisualShape(pb.GEOM_BOX, halfExtents=half, rgbaColor=(*rgb, 1), physicsClientId=c)
         return pb.createMultiBody(0, col, vis, basePosition=pos, physicsClientId=c)
 
-    def _make_cylinder(self, r, h, pos, rgb):
+    def _make_cylinder(self, r, h, pos, rgb, mass=0.0):
         c = self.client
         col = pb.createCollisionShape(pb.GEOM_CYLINDER, radius=r, height=h, physicsClientId=c)
         vis = pb.createVisualShape(pb.GEOM_CYLINDER, radius=r, length=h, rgbaColor=(*rgb, 1),
                                    physicsClientId=c)
-        return pb.createMultiBody(0, col, vis, basePosition=pos, physicsClientId=c)
+        return pb.createMultiBody(mass, col, vis, basePosition=pos, physicsClientId=c)
 
     def _build_static(self):
         w, h, t = self.width, self.height, WALL_THICKNESS

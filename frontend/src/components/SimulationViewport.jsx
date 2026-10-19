@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { Loader2, WifiOff } from 'lucide-react';
 import { api } from '../services/api';
 import { draw, layout, pointerToWorld, readPalette } from '../simulation/renderer';
+import { DisconnectedIcon, SpinnerIcon } from './Icons';
 import { MissionStatusBadge } from './StatusBadge';
 
 const EXPLORED_POLL_MS = 2000;
@@ -136,13 +136,13 @@ export function SimulationViewport({ telemetry, world, clickMode, onMapClick, co
           <div className="viewport-overlay" role="status">
             {connection === 'closed' ? (
               <>
-                <WifiOff size={22} aria-hidden="true" />
+                <DisconnectedIcon size={22} />
                 <strong>Simulation unavailable</strong>
                 <span>Waiting for the backend telemetry stream. Retrying automatically.</span>
               </>
             ) : (
               <>
-                <Loader2 size={22} className="spin" aria-hidden="true" />
+                <SpinnerIcon size={22} />
                 <span>Connecting to the simulation...</span>
               </>
             )}

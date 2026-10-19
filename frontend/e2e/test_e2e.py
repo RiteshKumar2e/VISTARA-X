@@ -1,6 +1,7 @@
 """End-to-end browser tests (Python Playwright) against the real running apps.
 
-Prerequisites: backend on :8000 and frontend on :5173 (see README), then
+Prerequisites: backend and frontend running (see README; URLs via E2E_BACKEND_URL /
+E2E_FRONTEND_URL, defaults :8000 and :5173). Then
     pip install playwright pytest && python -m playwright install chromium
     python -m pytest frontend/e2e -q
 Screenshots are written to E2E_SCREENSHOT_DIR (default: frontend/e2e/screenshots).
@@ -17,7 +18,8 @@ FRONTEND = os.getenv("E2E_FRONTEND_URL", "http://localhost:5173")
 BACKEND = os.getenv("E2E_BACKEND_URL", "http://localhost:8000")
 SHOTS = Path(os.getenv("E2E_SCREENSHOT_DIR", Path(__file__).parent / "screenshots"))
 WIDTHS = [320, 375, 390, 768, 1024, 1440]
-ROUTES = ["/", "/about", "/privacy", "/terms", "/does-not-exist"]
+ROUTES = ["/", "/mission", "/architecture", "/technology", "/roadmap", "/privacy", "/terms", "/does-not-exist"]
+INTERNAL = {"/", "/mission", "/architecture", "/technology", "/roadmap", "/privacy", "/terms"}
 
 
 @pytest.fixture(scope="session")
@@ -61,7 +63,7 @@ def wait_backend(page, predicate, timeout=90):
 
 def open_console(page):
     backend(page, "post", "/simulation/reset", {"scenario": "warehouse"})
-    page.goto(FRONTEND + "/")
+    page.goto(FRONTEND + "/mission")
     expect(page.locator(".viewport [data-status]")).to_contain_text("Idle", timeout=15000)
 
 
@@ -91,6 +93,10 @@ def test_full_mission_via_ui(page):
     page.get_by_role("button", name="Drop obstacle on route").click()
     expect(page.locator(".events")).to_contain_text("Replanned around", timeout=5000)
     assert telemetry(page)["mission"]["replans"] >= 1
+    toast = page.locator(".toast").filter(has_text="Route replanned")
+    expect(toast).to_be_visible(timeout=5000)
+    toast.get_by_role("button", name="Dismiss notification").click()
+    expect(toast).to_have_count(0)
     page.screenshot(path=str(SHOTS / "mission-replanned.png"))
 
     expect(page.locator(".viewport [data-status]")).to_contain_text("Goal reached", timeout=90000)
@@ -173,28 +179,29 @@ def test_pages_titles_links_and_404(page):
         expect(page.locator("h1")).to_be_visible()
         titles.add(page.title())
         for href in page.eval_on_selector_all("a[href^='/']", "els => els.map(e => e.getAttribute('href'))"):
-            assert href in ("/", "/about", "/privacy", "/terms"), f"unexpected internal link {href} on {route}"
+            assert href in INTERNAL, f"unexpected internal link {href} on {route}"
     assert len(titles) == len(ROUTES), titles
     page.goto(FRONTEND + "/does-not-exist")
     expect(page.locator("h1")).to_have_text("No route to this page")
     assert page.locator('meta[name="robots"]').get_attribute("content") == "noindex"
     page.get_by_role("link", name="Back to the mission console").click()
-    expect(page).to_have_url(FRONTEND + "/")
-    expect(page.locator("h1")).to_have_text("Mission console")
+    expect(page).to_have_url(FRONTEND + "/mission")
+    expect(page.locator("h1")).to_have_text("Live mission")
 
 
 def test_back_forward_navigation(page):
     page.goto(FRONTEND + "/")
-    page.get_by_role("navigation", name="Main").get_by_role("link", name="How it works").click()
-    expect(page).to_have_url(FRONTEND + "/about")
+    page.get_by_role("navigation", name="Main").get_by_role("link", name="Architecture").click()
+    expect(page).to_have_url(FRONTEND + "/architecture")
     page.get_by_role("link", name="Privacy").click()
     expect(page).to_have_url(FRONTEND + "/privacy")
     page.go_back()
-    expect(page).to_have_url(FRONTEND + "/about")
+    expect(page).to_have_url(FRONTEND + "/architecture")
     page.go_back()
     expect(page).to_have_url(FRONTEND + "/")
+    expect(page.locator("h1")).to_have_text("VISTARA-X")
     page.go_forward()
-    expect(page.locator("h1")).to_contain_text("Beyond seeing")
+    expect(page.locator("h1")).to_contain_text("Perception, planning")
 
 
 @pytest.mark.parametrize("width", WIDTHS)
@@ -204,7 +211,7 @@ def test_no_horizontal_overflow(browser, width):
     for route in ROUTES:
         page.goto(FRONTEND + route)
         expect(page.locator("h1")).to_be_visible()
-        if route == "/":
+        if route == "/mission":
             expect(page.locator(".viewport [data-status]")).to_be_visible(timeout=15000)
         overflow = page.evaluate("document.documentElement.scrollWidth - window.innerWidth")
         assert overflow <= 0, f"{route} overflows by {overflow}px at {width}px"
@@ -217,7 +224,7 @@ def test_no_horizontal_overflow(browser, width):
         )
         assert not wide, f"elements past the right edge on {route} at {width}px: {wide}"
         name = route.strip("/").replace("/", "-") or "console"
-        page.screenshot(path=str(SHOTS / f"{name}-{width}.png"), full_page=route == "/")
+        page.screenshot(path=str(SHOTS / f"{name}-{width}.png"), full_page=route in ("/", "/mission"))
     ctx.close()
 
 
@@ -234,11 +241,11 @@ def test_mobile_menu_and_touch_target(browser):
     page.keyboard.press("Escape")
     expect(page.locator("#site-nav")).to_be_hidden()
     toggle.click()
-    page.locator("#site-nav").get_by_role("link", name="How it works").click()
-    expect(page).to_have_url(FRONTEND + "/about")
+    page.locator("#site-nav").get_by_role("link", name="Architecture").click()
+    expect(page).to_have_url(FRONTEND + "/architecture")
     expect(page.locator("#site-nav")).to_be_hidden()
     # Tap the map to set a target.
-    page.goto(FRONTEND + "/")
+    page.goto(FRONTEND + "/mission")
     expect(page.locator(".viewport [data-status]")).to_contain_text("Idle", timeout=15000)
     box = page.locator(".viewport canvas").bounding_box()
     scale = (box["width"] - 28) / 20
@@ -252,7 +259,7 @@ def test_backend_unreachable_state(browser):
     page = ctx.new_page()
     page.route(f"{BACKEND}/**", lambda route: route.abort())
     page.route_web_socket(f"{BACKEND.replace('http', 'ws')}/ws/telemetry", lambda ws: ws.close())
-    page.goto(FRONTEND + "/")
+    page.goto(FRONTEND + "/mission")
     expect(page.get_by_role("alert")).to_contain_text("Backend unreachable", timeout=10000)
     expect(page.locator(".viewport-overlay")).to_contain_text("Simulation unavailable", timeout=10000)
     expect(page.get_by_role("button", name="Run guided demo")).to_be_disabled()
@@ -268,6 +275,41 @@ def test_keyboard_focus_visible(page):
     page.keyboard.press("Tab")
     shadow = page.evaluate("getComputedStyle(document.activeElement).boxShadow")
     assert shadow and shadow != "none"
+
+
+
+def test_architecture_explorer_shows_live_status(page):
+    backend(page, "post", "/simulation/reset", {"scenario": "warehouse"})
+    page.goto(FRONTEND + "/architecture")
+    detail = page.locator("#arch-detail")
+    expect(detail).to_contain_text("Path planning")
+    page.get_by_role("button", name="1.3 YOLO detection").click()
+    expect(detail).to_contain_text("YOLO detection")
+    expect(detail).to_contain_text("With labelled fallback")
+    expect(detail).to_contain_text("Simulated (ground truth)", timeout=10000)  # live detector label
+    # Keyboard: arrow keys move between stages.
+    page.keyboard.press("ArrowDown")
+    expect(detail).to_contain_text("Scene understanding")
+    expect(page.get_by_role("button", name="1.4 Scene understanding")).to_be_focused()
+    page.get_by_role("button", name="3.3 Environment feedback").click()
+    physics = telemetry(page)["safety"]["physics"]
+    expect(detail).to_contain_text("PyBullet" if physics == "pybullet" else "analytic 2D", timeout=10000)
+    page.locator("details summary", has_text="A* path planning").click()
+    expect(page.locator("details[open]")).to_contain_text("octile distance")
+
+
+def test_overview_process_and_tooltips(page):
+    page.goto(FRONTEND + "/")
+    expect(page.locator("h1")).to_have_text("VISTARA-X")
+    page.get_by_role("button", name="06 Path automatically replanned").click()
+    expect(page.locator("#process-detail")).to_contain_text("new A* plan")
+    expect(page.get_by_role("link", name="Open the live mission")).to_have_attribute("href", "/mission")
+    open_console(page)
+    term = page.get_by_role("button", name="Replans")
+    term.focus()
+    tip = page.locator(".term", has=term).locator("[role=tooltip]")
+    expect(tip).to_be_visible()
+    page.keyboard.press("Escape")
 
 
 SHOTS.mkdir(parents=True, exist_ok=True)

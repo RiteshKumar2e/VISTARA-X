@@ -1,9 +1,13 @@
 import { useEffect, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
+import { CloseIcon, MenuIcon } from './Icons';
 
 const NAV = [
-  { to: '/', label: 'Mission console', end: true },
-  { to: '/about', label: 'How it works' },
+  { to: '/', label: 'Overview', end: true },
+  { to: '/mission', label: 'Live mission' },
+  { to: '/architecture', label: 'Architecture' },
+  { to: '/technology', label: 'Technology' },
+  { to: '/roadmap', label: 'Future scope' },
 ];
 
 function Header() {
@@ -33,7 +37,7 @@ function Header() {
           aria-controls="site-nav"
           onClick={() => setOpen((o) => !o)}
         >
-          <span className="menu-icon" aria-hidden="true" />
+          {open ? <CloseIcon size={18} /> : <MenuIcon size={18} />}
           <span>{open ? 'Close' : 'Menu'}</span>
         </button>
         <nav id="site-nav" className={`site-nav${open ? ' open' : ''}`} aria-label="Main">
@@ -62,7 +66,10 @@ function Footer() {
         <nav aria-label="Footer">
           <ul>
             <li>
-              <Link to="/about">How it works</Link>
+              <Link to="/mission">Live mission</Link>
+            </li>
+            <li>
+              <Link to="/architecture">Architecture</Link>
             </li>
             <li>
               <Link to="/privacy">Privacy</Link>

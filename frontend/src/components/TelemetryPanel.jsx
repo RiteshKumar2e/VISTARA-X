@@ -1,3 +1,5 @@
+import { Term } from './Term';
+
 const fmt = (v, digits = 2, unit = '') => (v === null || v === undefined ? '—' : `${Number(v).toFixed(digits)}${unit}`);
 
 function Row({ label, children, tone }) {
@@ -35,7 +37,9 @@ export function TelemetryPanel({ telemetry }) {
 
       <div className="progress-block">
         <div className="progress-label">
-          <span>Navigation progress</span>
+          <Term tip="Distance travelled divided by distance travelled plus the remaining planned route. It changes when the route is replanned.">
+            Navigation progress
+          </Term>
           <span className="mono">{progress === null ? '—' : `${Math.round(progress * 100)}%`}</span>
         </div>
         <div
@@ -60,7 +64,7 @@ export function TelemetryPanel({ telemetry }) {
         <Row label="Detections">
           {p?.enabled ? `${p.detections.length} (${p.mode === 'yolov8' ? 'YOLOv8' : 'simulated'})` : 'perception off'}
         </Row>
-        <Row label="Physics check">{s.physics === 'pybullet' ? 'PyBullet' : 'analytic 2D'}</Row>
+        <Row label={<Term tip="Which geometry engine verifies clearance and contact every tick: PyBullet when installed, otherwise an exact 2D distance calculation.">Physics check</Term>}>{s.physics === 'pybullet' ? 'PyBullet' : 'analytic 2D'}</Row>
       </dl>
 
       <h3 className="sub">Robot</h3>
@@ -78,23 +82,23 @@ export function TelemetryPanel({ telemetry }) {
         <Row label="Target">{telemetry.target ? `x ${fmt(telemetry.target.x)} / y ${fmt(telemetry.target.y)} m` : 'none'}</Row>
         <Row label="Distance to target">{fmt(telemetry.distance_to_target, 2, ' m')}</Row>
         <Row label="Route remaining">{fmt(telemetry.remaining_path_length, 2, ' m')}</Row>
-        <Row label="Waypoint">
+        <Row label={<Term tip="The smoothed A* route is a list of waypoints. The controller is currently steering toward this one.">Waypoint</Term>}>
           {wp ? `${wp.index} of ${pathLen - 1} (x ${fmt(wp.x, 1)}, y ${fmt(wp.y, 1)})` : pathLen ? 'final' : 'no route'}
         </Row>
         <Row label="Mission time">{fmt(m.elapsed, 1, ' s')}</Row>
         <Row label="Distance travelled">{fmt(m.distance_travelled, 2, ' m')}</Row>
-        <Row label="Replans">{m.replans}</Row>
+        <Row label={<Term tip="How many times this mission computed a new A* route because the current one became blocked.">Replans</Term>}>{m.replans}</Row>
         {m.reason && <Row label="Status detail">{m.reason}</Row>}
       </dl>
 
       <h3 className="sub">Safety</h3>
       <dl className="kv-grid">
-        <Row label="Clearance" tone={s.warning ? 'danger' : undefined}>
+        <Row label={<Term tip="Gap between the robot's outer edge and the nearest obstacle or wall surface. A warning appears below 0.10 m.">Clearance</Term>} tone={s.warning ? 'danger' : undefined}>
           {fmt(Math.max(s.clearance, 0), 2, ' m')} {s.nearest ? `to ${s.nearest}` : ''}
           {s.warning ? ' (warning)' : ''}
         </Row>
-        <Row label="Planner inflation">{fmt(s.inflation, 2, ' m')}</Row>
-        <Row label="Safety stops">{m.safety_stops}</Row>
+        <Row label={<Term tip="Robot radius plus safety margin. The planner treats every cell closer than this to an obstacle as blocked.">Planner inflation</Term>}>{fmt(s.inflation, 2, ' m')}</Row>
+        <Row label={<Term tip="Times the safety layer vetoed a motion step that would have brought the robot within 5 cm of an obstacle.">Safety stops</Term>}>{m.safety_stops}</Row>
         <Row label="Collisions" tone={s.collisions ? 'danger' : undefined}>
           {s.collisions}
         </Row>
@@ -106,7 +110,7 @@ export function TelemetryPanel({ telemetry }) {
           <dl className="kv-grid">
             <Row label="Length">{fmt(plan.length, 2, ' m')}</Row>
             <Row label="Waypoints">{plan.waypoints}</Row>
-            <Row label="Nodes expanded">{plan.expanded}</Row>
+            <Row label={<Term tip="Grid cells A* had to examine before finding the route. Fewer means an easier search.">Nodes expanded</Term>}>{plan.expanded}</Row>
             <Row label="Planning time">{fmt(plan.planning_ms, 1, ' ms')}</Row>
           </dl>
         ) : (

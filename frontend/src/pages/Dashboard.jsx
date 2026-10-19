@@ -7,6 +7,7 @@ import { PerceptionPanel } from '../components/PerceptionPanel';
 import { SimulationViewport } from '../components/SimulationViewport';
 import { SystemStatus } from '../components/SystemStatus';
 import { TelemetryPanel } from '../components/TelemetryPanel';
+import { Toaster } from '../components/Toaster';
 import { useBackendStatus } from '../hooks/useBackendStatus';
 import { useCommand } from '../hooks/useCommand';
 import { usePageMeta } from '../hooks/usePageMeta';
@@ -17,7 +18,7 @@ const DEFAULT_WORLD = { width: 20, height: 12 };
 
 export default function Dashboard() {
   usePageMeta(
-    'VISTARA-X Mission Console | Vision-Based Autonomous Navigation',
+    'Live Mission | VISTARA-X Mission Console',
     'Run a live autonomous navigation mission: select a target, watch A* planning, drop an obstacle and see the robot replan.',
   );
   const { telemetry, connection, versionMismatch } = useTelemetry();
@@ -56,10 +57,11 @@ export default function Dashboard() {
     <div className="console">
       <div className="console-intro">
         <div>
-          <h1>Mission console</h1>
+          <h1>Live mission</h1>
           <p className="muted">
-            Beyond Seeing. Into Understanding. A simulated robot perceives its surroundings, plans with A* on an occupancy grid,
-            and replans when obstacles appear. <Link to="/about">How it works</Link>
+            Every value on this page comes from the running backend simulation. Select a target, start the mission, then drop an
+            obstacle on the route to watch it replan. New here? Use the <a href="#demo-title">guided demo</a> or read{' '}
+            <Link to="/architecture">how it works</Link>.
           </p>
         </div>
       </div>
@@ -116,6 +118,7 @@ export default function Dashboard() {
           <EventLog telemetry={telemetry} />
         </div>
       </div>
+      <Toaster telemetry={telemetry} />
     </div>
   );
 }

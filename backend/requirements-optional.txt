@@ -1,4 +1,14 @@
-# Optional perception stack for real YOLOv8 inference (CPU is sufficient).
+# Optional components. The backend runs without them using clearly labelled
+# fallbacks (analytic 2D collision + ray-cast camera, simulated detector).
+#   pip install -r requirements-optional.txt
+
+# PyBullet: headless (DIRECT) collision checking and camera rendering.
+# Windows/Python 3.10+ has no prebuilt wheel: pip compiles it, which needs
+# "Microsoft C++ Build Tools" (Desktop development with C++). Takes ~5-10 min.
+pybullet==3.2.7
+
+# YOLOv8 inference (CPU is sufficient). Weights are NOT downloaded automatically;
+# see models/README.md.
 ultralytics==8.3.174
 torch>=2.2
 torchvision>=0.17

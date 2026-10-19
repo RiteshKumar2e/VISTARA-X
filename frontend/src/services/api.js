@@ -67,5 +67,6 @@ export const api = {
   injectObstacle: () => request('post', '/obstacles/inject'),
   clearObstacles: () => request('delete', '/obstacles'),
   setDetector: (mode) => request('post', '/perception/mode', { mode }),
+  configurePerception: (params) => request('post', '/perception/config', params),
   frameUrl: (seq) => `${API_BASE_URL}/perception/frame?f=${seq}`,
 };

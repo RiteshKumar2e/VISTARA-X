@@ -26,7 +26,10 @@ export function SystemStatus({ backend, connection }) {
   let perDetail = '';
   if (backend.state === 'down') perState = 'down';
   else if (perception) {
-    if (perception.mode === 'yolov8') {
+    if (perception.enabled === false) {
+      perState = 'degraded';
+      perDetail = 'Frame processing paused';
+    } else if (perception.mode === 'yolov8') {
       perState = perception.last_error ? 'degraded' : 'ok';
       perDetail = 'YOLOv8 inference active';
     } else {
@@ -47,7 +50,13 @@ export function SystemStatus({ backend, connection }) {
         <Item
           name="Simulation"
           state={simState}
-          detail={st?.simulation ? `${st.simulation.rate_hz} Hz, ${st.simulation.scenario}` : ''}
+          detail={
+            st?.simulation
+              ? `${st.simulation.rate_hz} Hz, ${st.simulation.scenario}, ${
+                  st.simulation.physics === 'pybullet' ? 'PyBullet collision checks' : 'analytic collision (PyBullet not installed)'
+                }`
+              : ''
+          }
         />
         <Item
           name="Telemetry stream"

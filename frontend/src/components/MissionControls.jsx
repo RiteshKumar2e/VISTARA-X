@@ -1,17 +1,25 @@
 import { useEffect, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { api } from '../services/api';
+import {
+  ClearIcon,
+  CloseIcon,
+  CrosshairIcon,
+  ObstacleIcon,
+  PauseIcon,
+  PlayIcon,
+  ResetIcon,
+  SpinnerIcon,
+  StopIcon,
+} from './Icons';
 
 const ACTIVE = new Set(['planning', 'navigating']);
 
-function Spinner() {
-  return <span className="spinner spinner-sm" aria-hidden="true" />;
-}
-
-function CommandButton({ name, pending, children, className = 'btn', ...props }) {
+export function CommandButton({ name, pending, icon: Icon, children, className = 'btn', ...props }) {
   const busy = pending === name;
   return (
     <button type="button" className={className} aria-busy={busy || undefined} {...props}>
-      {busy && <Spinner />}
+      {busy ? <SpinnerIcon size={15} /> : Icon && <Icon size={15} />}
       {children}
     </button>
   );
@@ -32,7 +40,7 @@ export function validateTarget(xRaw, yRaw, world, margin) {
 }
 
 export function MissionControls({ telemetry, command, online, scenarios, world, clickMode, setClickMode }) {
-  const { pending, feedback, run } = command;
+  const { pending, feedback, run, clearFeedback } = command;
   const status = telemetry?.mission?.status;
   const waiting = telemetry?.mission?.waiting;
   const target = telemetry?.target;
@@ -104,6 +112,7 @@ export function MissionControls({ telemetry, command, online, scenarios, world, 
           <CommandButton
             name="start"
             pending={pending}
+            icon={PlayIcon}
             className="btn btn-primary btn-wide"
             disabled={!canStart || !!pending}
             onClick={() => run('start', () => api.navigate(), () => 'Mission started')}
@@ -114,6 +123,7 @@ export function MissionControls({ telemetry, command, online, scenarios, world, 
             <CommandButton
               name="resume"
               pending={pending}
+              icon={PlayIcon}
               disabled={!canResume || !!pending}
               onClick={() => run('resume', api.resume, () => 'Mission resumed')}
             >
@@ -123,6 +133,7 @@ export function MissionControls({ telemetry, command, online, scenarios, world, 
             <CommandButton
               name="pause"
               pending={pending}
+              icon={PauseIcon}
               disabled={!canPause || !!pending}
               onClick={() => run('pause', api.pause, () => 'Mission paused')}
             >
@@ -132,6 +143,7 @@ export function MissionControls({ telemetry, command, online, scenarios, world, 
           <CommandButton
             name="stop"
             pending={pending}
+            icon={StopIcon}
             disabled={!canStop || !!pending}
             onClick={() => run('stop', api.stop, () => 'Mission stopped; robot halted')}
           >
@@ -140,6 +152,7 @@ export function MissionControls({ telemetry, command, online, scenarios, world, 
           <CommandButton
             name="reset"
             pending={pending}
+            icon={ResetIcon}
             className={confirmReset ? 'btn btn-danger' : 'btn'}
             disabled={disabled || !!pending}
             onClick={reset}
@@ -149,12 +162,26 @@ export function MissionControls({ telemetry, command, online, scenarios, world, 
         </div>
         {!target && telemetry && <p className="hint">Select a target on the map or below to enable Start mission.</p>}
         <div className="feedback" role="status" aria-live="polite">
-          {feedback && (
-            <p className={`feedback-msg feedback-${feedback.kind}`}>
-              <strong>{feedback.kind === 'error' ? 'Error: ' : 'Done: '}</strong>
-              {feedback.text}
-            </p>
-          )}
+          <AnimatePresence initial={false}>
+            {feedback && (
+              <motion.div
+                key={feedback.text}
+                className={`feedback-msg feedback-${feedback.kind} dismissible`}
+                initial={{ opacity: 0, y: -4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.15 }}
+              >
+                <p>
+                  <strong>{feedback.kind === 'error' ? 'Error: ' : 'Done: '}</strong>
+                  {feedback.text}
+                </p>
+                <button type="button" className="icon-btn" onClick={clearFeedback} aria-label="Dismiss message">
+                  <CloseIcon size={14} />
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </div>
 
@@ -190,6 +217,7 @@ export function MissionControls({ telemetry, command, online, scenarios, world, 
           <CommandButton
             name="target"
             pending={pending}
+            icon={CrosshairIcon}
             className="btn field-submit"
             type="submit"
             disabled={disabled || !!pending}
@@ -223,6 +251,7 @@ export function MissionControls({ telemetry, command, online, scenarios, world, 
           <CommandButton
             name="inject"
             pending={pending}
+            icon={ObstacleIcon}
             disabled={disabled || status !== 'navigating' || !!pending}
             onClick={() => run('inject', api.injectObstacle, (r) => `Obstacle ${r.obstacle.id} placed on the route`)}
           >
@@ -231,6 +260,7 @@ export function MissionControls({ telemetry, command, online, scenarios, world, 
           <CommandButton
             name="clear"
             pending={pending}
+            icon={ClearIcon}
             disabled={disabled || !!pending}
             onClick={() => run('clear', api.clearObstacles, (r) => `Removed ${r.removed} added obstacle(s)`)}
           >

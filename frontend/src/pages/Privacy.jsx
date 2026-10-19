@@ -69,7 +69,7 @@ export default function Privacy() {
       </section>
 
       <p>
-        <Link to="/">Back to the mission console</Link>
+        <Link to="/mission">Back to the mission console</Link>
       </p>
     </article>
   );

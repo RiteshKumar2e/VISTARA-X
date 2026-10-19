@@ -1,10 +1,14 @@
 import { lazy, Suspense } from 'react';
 import { Route, Routes } from 'react-router-dom';
 import { Layout } from './components/Layout';
-import Dashboard from './pages/Dashboard';
+import { SpinnerIcon } from './components/Icons';
+import Overview from './pages/Overview';
 
-// Secondary pages are split out so the console loads with the smallest bundle.
-const About = lazy(() => import('./pages/About'));
+// The console and secondary pages are split so each route loads only what it needs.
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const Architecture = lazy(() => import('./pages/Architecture'));
+const Technology = lazy(() => import('./pages/Technology'));
+const Roadmap = lazy(() => import('./pages/Roadmap'));
 const Privacy = lazy(() => import('./pages/Privacy'));
 const Terms = lazy(() => import('./pages/Terms'));
 const NotFound = lazy(() => import('./pages/NotFound'));
@@ -12,7 +16,7 @@ const NotFound = lazy(() => import('./pages/NotFound'));
 function PageLoading() {
   return (
     <div className="page-loading" role="status">
-      <span className="spinner" aria-hidden="true" />
+      <SpinnerIcon size={18} />
       Loading...
     </div>
   );
@@ -20,16 +24,29 @@ function PageLoading() {
 
 export default function App() {
   return (
-    <Suspense fallback={<PageLoading />}>
-      <Routes>
-        <Route element={<Layout />}>
-          <Route index element={<Dashboard />} />
-          <Route path="about" element={<About />} />
-          <Route path="privacy" element={<Privacy />} />
-          <Route path="terms" element={<Terms />} />
-          <Route path="*" element={<NotFound />} />
-        </Route>
-      </Routes>
-    </Suspense>
+    <Routes>
+      <Route element={<Layout />}>
+        <Route index element={<Overview />} />
+        {[
+          ['mission', Dashboard],
+          ['architecture', Architecture],
+          ['technology', Technology],
+          ['roadmap', Roadmap],
+          ['privacy', Privacy],
+          ['terms', Terms],
+          ['*', NotFound],
+        ].map(([path, Page]) => (
+          <Route
+            key={path}
+            path={path}
+            element={
+              <Suspense fallback={<PageLoading />}>
+                <Page />
+              </Suspense>
+            }
+          />
+        ))}
+      </Route>
+    </Routes>
   );
 }
