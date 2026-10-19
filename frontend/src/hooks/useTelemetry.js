@@ -83,7 +83,12 @@ export function useTelemetry() {
       clearInterval(pingTimer);
       if (ws) {
         ws.onclose = null;
-        ws.close();
+        ws.onerror = null;
+        ws.onmessage = null;
+        // Closing a socket that is still connecting logs a browser warning (common with
+        // React StrictMode's double mount in development); close it once it opens instead.
+        if (ws.readyState === WebSocket.CONNECTING) ws.onopen = () => ws.close();
+        else ws.close();
       }
     };
   }, []);
