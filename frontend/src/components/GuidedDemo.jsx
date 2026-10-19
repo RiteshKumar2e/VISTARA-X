@@ -10,7 +10,7 @@ const EMPTY_RUN = { prepared: false, targetSet: false, started: false, injected:
  * Guided judge demo. Every step calls the real backend and is marked complete only
  * when live telemetry confirms it, so the walkthrough cannot show a fake success.
  */
-export function GuidedDemo({ telemetry, command, online }) {
+export function GuidedDemo({ telemetry, command, online, startSignal = 0 }) {
   const [run, setRun] = useState(EMPTY_RUN);
   const [auto, setAuto] = useState(false);
   const inFlight = useRef(false);
@@ -115,6 +115,15 @@ export function GuidedDemo({ telemetry, command, online }) {
     setRun(EMPTY_RUN);
     setAuto(true);
   };
+
+  // "Restart guided demo" from Mission controls.
+  useEffect(() => {
+    if (startSignal > 0) {
+      setRun(EMPTY_RUN);
+      setAuto(true);
+      document.getElementById('demo-title')?.scrollIntoView({ block: 'nearest' });
+    }
+  }, [startSignal]);
 
   return (
     <section className="panel demo" aria-labelledby="demo-title">

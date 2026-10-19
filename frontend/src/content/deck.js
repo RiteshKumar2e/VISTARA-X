@@ -7,14 +7,12 @@
 //   simulation   - runs, but only against the simulator (no real hardware/sensors)
 //   fallback     - a labelled stand-in is used when the real component is unavailable
 //   partial      - part of the deck's description is implemented
-//   planned      - future scope from the deck, not implemented
 
 export const STATUS = {
   implemented: { label: 'Implemented', tone: 'success' },
   simulation: { label: 'Simulation only', tone: 'accent' },
   fallback: { label: 'With labelled fallback', tone: 'warning' },
   partial: { label: 'Partially implemented', tone: 'warning' },
-  planned: { label: 'Future scope', tone: 'neutral' },
 };
 
 // Slide 1: Team
@@ -226,6 +224,20 @@ export const ARCHITECTURE = [
     live: 'mission',
   },
   {
+    id: '2.2a',
+    layer: 'decision',
+    title: 'Occupancy grid',
+    deck: 'Added for clarity: part of "mapped environment state" in the deck',
+    status: 'implemented',
+    purpose: 'Represent free, blocked and unknown space for the planner.',
+    inputs: 'Obstacle geometry, robot radius, safety margin, camera observations',
+    outputs: 'Inflated 100 x 60 grid (0.2 m cells) with a caution band; explored/unknown mask',
+    implementation:
+      'Obstacles are rasterised and inflated by the robot radius plus the safety margin. GET /map returns cell states: occupied, inflated, observed free and unknown.',
+    modules: ['backend/app/navigation/grid.py', 'backend/app/scene/observation.py'],
+    live: 'grid',
+  },
+  {
     id: '2.3',
     layer: 'decision',
     title: 'Path planning',
@@ -276,7 +288,7 @@ export const ARCHITECTURE = [
     inputs: 'Velocity commands',
     outputs: 'New robot pose',
     implementation:
-      'Differential-drive kinematics integrated at a fixed 20 Hz timestep. No physical motors are driven; motor-controller integration is future scope.',
+      'Differential-drive kinematics integrated at a fixed 20 Hz timestep. No physical motors are driven.',
     modules: ['backend/app/control/controller.py'],
     live: 'robot',
   },
@@ -294,7 +306,38 @@ export const ARCHITECTURE = [
     modules: ['backend/app/simulation/physics.py', 'backend/app/api/websocket.py'],
     live: 'safety',
   },
+  {
+    id: '3.4',
+    layer: 'control',
+    title: 'Live telemetry',
+    deck: 'Added for clarity: WebSocket /ws/telemetry from the deck’s APIs',
+    status: 'implemented',
+    purpose: 'Stream authoritative state to the dashboard.',
+    inputs: 'Engine snapshot (pose, route, events, perception, safety)',
+    outputs: 'Versioned JSON messages with strictly increasing sequence numbers',
+    implementation:
+      'An asyncio task samples the engine at 10 Hz and fans out through per-client queues of size 1, so slow clients receive the newest state instead of a backlog.',
+    modules: ['backend/app/api/websocket.py', 'frontend/src/hooks/useTelemetry.js'],
+    live: 'telemetry',
+  },
 ];
+
+// Known limitations per stage, shown in the architecture explorer.
+export const STAGE_LIMITS = {
+  '1.1': 'Synthetic render of simple shapes; no real camera, noise model or lens distortion.',
+  '1.2': 'No denoising or filtering stage; frames are only encoded and resized.',
+  '1.3': 'COCO-trained YOLOv8 rarely recognises rendered primitives; the default detector is ground truth, not a model.',
+  '1.4': 'Tracks use a simple nearest-neighbour association; no prediction of where moving obstacles go next.',
+  '2.1': 'The operator chooses the target; it is not recognised automatically from vision.',
+  '2.2': 'Rule-based state machine; it does not weigh alternative actions or costs beyond the planner.',
+  '2.2a': 'Built from simulator geometry; it is not yet built from perception (no SLAM).',
+  '2.3': 'Grid-resolution limited (0.2 m); Dijkstra from the deck is not implemented separately.',
+  '2.4': 'Moving obstacles are avoided at their current position only; waiting is limited to 8 s before Blocked.',
+  '3.1': 'Tuned for this simulated robot; no wheel slip, latency or actuator dynamics.',
+  '3.2': 'Kinematic motion in simulation; no physical motors are driven.',
+  '3.3': 'Feedback is ground truth from the simulator, not from real sensors.',
+  '3.4': 'Single-process server; clients receive the latest snapshot only, not a full history.',
+};
 
 // Slide 4: Data flow (text version of the pipeline)
 export const DATA_FLOW = [
@@ -403,64 +446,12 @@ export const MARKET = {
   note: 'Qualitative assessment from the team’s pitch deck. No market figures were sourced or verified for this prototype.',
 };
 
-// Slide 7: Future scope
-export const ROADMAP = {
-  title: 'From simulation to real-world autonomous robotics',
-  phases: [
-    {
-      phase: 'Phase 1',
-      title: 'Intelligent simulation',
-      status: 'implemented',
-      items: [
-        ['Vision-based object and obstacle detection', 'fallback'],
-        ['Autonomous target navigation', 'implemented'],
-        ['Dynamic path replanning', 'implemented'],
-        ['Real-time obstacle avoidance', 'simulation'],
-      ],
-    },
-    {
-      phase: 'Phase 2',
-      title: 'Real-world prototype',
-      status: 'planned',
-      items: [
-        ['RGB / depth camera integration', 'planned'],
-        ['Motor and robot-controller integration', 'planned'],
-        ['Real-time sensor feedback', 'planned'],
-        ['Sim-to-real validation', 'planned'],
-      ],
-    },
-    {
-      phase: 'Phase 3',
-      title: 'Advanced perception',
-      status: 'planned',
-      items: [
-        ['LiDAR and depth sensing', 'planned'],
-        ['Multi-sensor fusion', 'planned'],
-        ['Vision-language models', 'planned'],
-        ['Robust scene understanding', 'planned'],
-      ],
-    },
-    {
-      phase: 'Phase 4',
-      title: 'Scalable autonomy',
-      status: 'planned',
-      items: [
-        ['Natural-language / voice-based objectives', 'planned'],
-        ['Complex dynamic environments', 'planned'],
-        ['Multi-robot coordination', 'planned'],
-        ['Real-world autonomous deployment', 'planned'],
-      ],
-    },
-  ],
-  journey: ['Simulate', 'Validate', 'Sense', 'Understand', 'Coordinate', 'Deploy'],
-};
-
 export const LIMITATIONS = [
   'Everything runs in simulation. No physical robot, camera, depth sensor or LiDAR is connected.',
   'Collision avoidance uses ground-truth obstacle geometry from the simulator, not camera detections.',
   'The camera image is a simple synthetic render. YOLOv8 is trained on real photographs and may detect little in it; its results are shown unedited.',
   'Robot motion is kinematic (no wheel slip or dynamics). PyBullet is used for collision and rendering, not for driving the robot.',
   'The target is chosen by the operator; automatic target recognition from vision is not implemented.',
-  'Moving obstacles are planned around at their current position; their future motion is not predicted.',
+  'Moving obstacles are avoided at their current position; their motion is not predicted.',
   'No accuracy, latency or success-rate benchmarks have been measured, so none are claimed.',
 ];

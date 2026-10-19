@@ -19,8 +19,8 @@ VISTARA-X is a simulation-first autonomous robotics platform. A simulated robot 
 - [Testing](#testing)
 - [Deployment and security](#deployment-and-security)
 - [Troubleshooting](#troubleshooting)
+- [Demo walkthrough](#demo-walkthrough)
 - [Limitations and roadmap](#limitations-and-roadmap)
-- [Documentation](#documentation)
 
 ---
 
@@ -46,7 +46,7 @@ The system runs entirely in simulation, with module boundaries designed for late
 | Obstacle avoidance | Route-obstruction checks every tick, safety-stop layer, dynamic replanning | Implemented |
 | Failure handling | Honest *Blocked* state when no safe route exists | Implemented |
 | Telemetry | Versioned WebSocket stream with sequence numbers and bounded queues | Implemented |
-| Dashboard | Interactive map, mission controls, telemetry, perception, event log, guided demo | Implemented |
+| Dashboard | Zoomable map with interpolated robot model, animated route reveal and replan ghost, mission controls, telemetry, perception, event timeline, guided demo | Implemented |
 
 ## Architecture
 
@@ -66,7 +66,7 @@ The system runs entirely in simulation, with module boundaries designed for late
 └───────────────────────────────────────────────────────────┘
 ```
 
-A single simulation thread owns the robot, so concurrent controllers cannot conflict. Perception runs on a separate worker thread so that model inference never delays control or API responses. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for details.
+A single simulation thread owns the robot, so concurrent controllers cannot conflict. Perception runs on a separate worker thread so that model inference never delays control or API responses.
 
 ### Repository layout
 
@@ -74,7 +74,6 @@ A single simulation thread owns the robot, so concurrent controllers cannot conf
 VISTARA-X/
 ├── backend/            FastAPI service, simulation, perception, navigation, control, tests
 ├── frontend/           React application, dashboard, content pages, E2E tests
-├── docs/               Architecture, API reference, demo script, content inventory
 └── README.md
 ```
 
@@ -109,7 +108,7 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:5173` and select **Live mission**. A step-by-step demonstration is available in [docs/DEMO.md](docs/DEMO.md).
+Open `http://localhost:5173` and select **Live mission**. See [Demo walkthrough](#demo-walkthrough) for a guided run.
 
 ## Configuration
 
@@ -188,6 +187,14 @@ The end-to-end suite accepts `E2E_BACKEND_URL` and `E2E_FRONTEND_URL` to target 
 | PyBullet fails to install on Windows | Install the *Desktop development with C++* build tools, or continue without it; the analytic fallback is used and reported. |
 | YOLOv8 option is disabled | Weights are missing or `ultralytics` is not installed. |
 
+## Demo walkthrough
+
+1. Start both applications and open **Live mission**.
+2. Click **Run guided demo**. Each step completes only when backend telemetry confirms it: the warehouse loads, the target (18.5, 6.0) is selected, A\* plans a route, the robot drives, a barrier is dropped across the route, the route is replanned, and **Goal reached** appears only within 0.2 m of the target.
+3. Explore manually: click the map to set a target, use **Pause / Resume / Stop**, zoom with **+ / −** and drag to pan, and in **Place obstacle** mode add an obstacle or click one you added to move it.
+4. Show an honest failure: load **Enclosed bay (unreachable)**, set target `16, 6`, and start. The mission reports **Blocked** and the robot does not move.
+5. On **Architecture**, select any stage to see its inputs, outputs, limitations and live backend values.
+
 ## Limitations and roadmap
 
 **Current limitations**
@@ -205,15 +212,6 @@ The end-to-end suite accepts `E2E_BACKEND_URL` and `E2E_FRONTEND_URL` to target 
 2. **Real-world prototype** — RGB/depth cameras, motor-controller integration, sim-to-real validation.
 3. **Advanced perception** — LiDAR, multi-sensor fusion, vision-language models.
 4. **Scalable autonomy** — natural-language objectives, multi-robot coordination, real-world deployment.
-
-## Documentation
-
-| Document | Contents |
-|---|---|
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Threads, control loop, module responsibilities |
-| [docs/API.md](docs/API.md) | REST endpoints, error codes, telemetry schema |
-| [docs/DEMO.md](docs/DEMO.md) | Repeatable demonstration script |
-| [docs/CONTENT_INVENTORY.md](docs/CONTENT_INVENTORY.md) | Mapping of pitch-deck content to the application |
 
 ---
 

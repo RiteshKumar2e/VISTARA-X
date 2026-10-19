@@ -65,6 +65,7 @@ export const api = {
   configure: (params) => request('post', '/simulation/config', params),
   addObstacle: (x, y, opts = {}) => request('post', '/obstacles', { x, y, ...opts }),
   injectObstacle: () => request('post', '/obstacles/inject'),
+  moveObstacle: (id, x, y) => request('post', `/obstacles/${encodeURIComponent(id)}/move`, { x, y }),
   clearObstacles: () => request('delete', '/obstacles'),
   setDetector: (mode) => request('post', '/perception/mode', { mode }),
   configurePerception: (params) => request('post', '/perception/config', params),

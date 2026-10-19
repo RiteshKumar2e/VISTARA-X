@@ -7,6 +7,7 @@ import { ScrollToTop } from './components/ScrollToTop';
 import './styles/tokens.css';
 import './styles/app.css';
 import './styles/pages.css';
+import './styles/viewport.css';
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>

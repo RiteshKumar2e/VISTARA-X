@@ -8,7 +8,6 @@ import Overview from './pages/Overview';
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const Architecture = lazy(() => import('./pages/Architecture'));
 const Technology = lazy(() => import('./pages/Technology'));
-const Roadmap = lazy(() => import('./pages/Roadmap'));
 const Privacy = lazy(() => import('./pages/Privacy'));
 const Terms = lazy(() => import('./pages/Terms'));
 const NotFound = lazy(() => import('./pages/NotFound'));
@@ -31,7 +30,6 @@ export default function App() {
           ['mission', Dashboard],
           ['architecture', Architecture],
           ['technology', Technology],
-          ['roadmap', Roadmap],
           ['privacy', Privacy],
           ['terms', Terms],
           ['*', NotFound],

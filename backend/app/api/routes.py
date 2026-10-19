@@ -17,7 +17,7 @@ from ..schemas.api import (
     Point,
     ResetRequest,
 )
-from ..simulation.engine import SimulationEngine
+from ..simulation.engine import CommandError, SimulationEngine
 from ..simulation.scenarios import SCENARIOS
 
 router = APIRouter()
@@ -72,6 +72,17 @@ def status(request: Request):
             "sim_time": snap["sim_time"],
         },
         "mission": snap["mission"],
+        "planner": {
+            "algorithm": "A* (8-connected, octile heuristic)",
+            "last_plan": snap["last_plan"],
+            "ready": eng.thread_alive,
+        },
+        "controller": {
+            "type": "pure pursuit",
+            "active": snap["mission"]["status"] in ("planning", "navigating"),
+            "ready": eng.thread_alive,
+            "params": snap["params"],
+        },
         "perception": {
             "mode": perception["mode"],
             "source_label": perception["source_label"],
@@ -199,6 +210,14 @@ def configure(body: ConfigRequest, request: Request):
 @router.post("/obstacles", tags=["simulation"], status_code=201, responses=ERRORS)
 def add_obstacle(body: ObstacleRequest, request: Request):
     return {"ok": True, "obstacle": engine(request).add_obstacle(body.x, body.y, body.shape, body.size, body.label)}
+
+
+@router.post("/obstacles/{obstacle_id}/move", tags=["simulation"], responses=ERRORS)
+def move_obstacle(obstacle_id: str, body: Point, request: Request):
+    """Move an obstacle you added (scenario obstacles are fixed)."""
+    if len(obstacle_id) > 32:
+        raise CommandError("not_found", "No such obstacle", 404)
+    return {"ok": True, "obstacle": engine(request).move_obstacle(obstacle_id, body.x, body.y)}
 
 
 @router.post("/obstacles/inject", tags=["simulation"], status_code=201, responses=ERRORS)

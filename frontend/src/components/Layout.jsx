@@ -7,7 +7,6 @@ const NAV = [
   { to: '/mission', label: 'Live mission' },
   { to: '/architecture', label: 'Architecture' },
   { to: '/technology', label: 'Technology' },
-  { to: '/roadmap', label: 'Future scope' },
 ];
 
 function Header() {

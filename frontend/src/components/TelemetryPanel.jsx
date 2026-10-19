@@ -1,6 +1,8 @@
 import { Term } from './Term';
 
-const fmt = (v, digits = 2, unit = '') => (v === null || v === undefined ? '—' : `${Number(v).toFixed(digits)}${unit}`);
+// Values the backend did not supply are shown as "Unavailable", never estimated.
+const fmt = (v, digits = 2, unit = '') =>
+  v === null || v === undefined || Number.isNaN(v) ? 'Unavailable' : `${Number(v).toFixed(digits)}${unit}`;
 
 function Row({ label, children, tone }) {
   return (
@@ -72,7 +74,9 @@ export function TelemetryPanel({ telemetry }) {
         <Row label="Position">
           x {fmt(r.x)} / y {fmt(r.y)} m
         </Row>
-        <Row label="Heading">{fmt(r.heading_deg, 1, '°')}</Row>
+        <Row label={<Term tip="Degrees, measured counter-clockwise from the +x axis (pointing right on the map).">Heading (deg)</Term>}>
+          {fmt(r.heading_deg, 1, '\u00b0')}
+        </Row>
         <Row label="Linear speed">{fmt(r.v, 2, ' m/s')}</Row>
         <Row label="Turn rate">{fmt(r.w, 2, ' rad/s')}</Row>
       </dl>
@@ -81,6 +85,7 @@ export function TelemetryPanel({ telemetry }) {
       <dl className="kv-grid">
         <Row label="Target">{telemetry.target ? `x ${fmt(telemetry.target.x)} / y ${fmt(telemetry.target.y)} m` : 'none'}</Row>
         <Row label="Distance to target">{fmt(telemetry.distance_to_target, 2, ' m')}</Row>
+        <Row label="Route length (planned)">{plan?.success ? fmt(plan.length, 2, ' m') : 'Unavailable'}</Row>
         <Row label="Route remaining">{fmt(telemetry.remaining_path_length, 2, ' m')}</Row>
         <Row label={<Term tip="The smoothed A* route is a list of waypoints. The controller is currently steering toward this one.">Waypoint</Term>}>
           {wp ? `${wp.index} of ${pathLen - 1} (x ${fmt(wp.x, 1)}, y ${fmt(wp.y, 1)})` : pathLen ? 'final' : 'no route'}

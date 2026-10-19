@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../services/api';
-import { draw, layout, pointerToWorld, readPalette } from '../simulation/renderer';
+import { SceneAnimator, clampPan, drawScene, makeView, readPalette } from '../simulation/renderer';
 import { DisconnectedIcon, SpinnerIcon } from './Icons';
 import { MissionStatusBadge } from './StatusBadge';
 
 const EXPLORED_POLL_MS = 2000;
+const MIN_ZOOM = 1;
+const MAX_ZOOM = 4;
+const DRAG_THRESHOLD = 5; // px: below this a pointer gesture counts as a click
 
 const LAYERS = [
   ['inflation', 'Safety zones'],
@@ -14,7 +17,9 @@ const LAYERS = [
   ['trail', 'Trail'],
 ];
 
-/** Polls GET /map for the explored/unknown cell layer while that layer is visible. */
+const prefersReducedMotion = () =>
+  typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+
 function useExploredCells(enabled, online) {
   const [explored, setExplored] = useState(null);
   useEffect(() => {
@@ -35,103 +40,249 @@ function useExploredCells(enabled, online) {
   return enabled ? explored : null;
 }
 
-export function SimulationViewport({ telemetry, world, clickMode, onMapClick, connection, online }) {
+const fmtM = (v) => (v === null || v === undefined ? 'Unavailable' : `${v.toFixed(2)} m`);
+
+export function SimulationViewport({
+  telemetry,
+  world,
+  clickMode,
+  onMapClick,
+  connection,
+  online,
+  rejected,
+  selectedObstacle,
+}) {
   const wrapRef = useRef(null);
   const canvasRef = useRef(null);
-  const paletteRef = useRef(null);
+  const animRef = useRef(new SceneAnimator());
+  const optsRef = useRef({});
   const viewRef = useRef(null);
-  const trailRef = useRef({ key: null, points: [], simTime: 0 });
+  const dirtyRef = useRef(true);
+  const dragRef = useRef(null);
   const [width, setWidth] = useState(0);
   const [hover, setHover] = useState(null);
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [effects, setEffects] = useState(() => !prefersReducedMotion());
   const [layers, setLayers] = useState({ inflation: true, fov: true, tracks: true, explored: false, trail: true });
   const explored = useExploredCells(layers.explored, online);
+
+  // Feed authoritative telemetry to the animator (no React re-render per frame).
+  useEffect(() => {
+    if (telemetry) {
+      animRef.current.ingest(telemetry, performance.now());
+      dirtyRef.current = true;
+    }
+  }, [telemetry]);
+
+  useEffect(() => {
+    optsRef.current = { layers, explored, effects, rejected, selectedObstacle };
+    dirtyRef.current = true;
+  }, [layers, explored, effects, rejected, selectedObstacle]);
 
   useEffect(() => {
     const el = wrapRef.current;
     if (!el) return undefined;
-    paletteRef.current = readPalette(el);
+    optsRef.current.pal = readPalette(el);
     const ro = new ResizeObserver(([entry]) => setWidth(Math.floor(entry.contentRect.width)));
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
 
-  // Accumulate the travelled trail; reset on a new mission or a simulation reset.
-  if (telemetry?.robot) {
-    const key = `${telemetry.scenario}:${telemetry.mission.id}`;
-    const tr = trailRef.current;
-    const { x, y } = telemetry.robot;
-    const last = tr.points[tr.points.length - 1];
-    if (tr.key !== key || telemetry.sim_time < tr.simTime) {
-      tr.key = key;
-      tr.points = [[x, y]];
-    } else if (!last || Math.hypot(last[0] - x, last[1] - y) > 0.05) {
-      tr.points.push([x, y]);
-      if (tr.points.length > 4000) tr.points.shift();
-    }
-    tr.simTime = telemetry.sim_time;
-  }
-
+  // Size the canvas and (re)build the view transform when size, zoom or pan change.
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !width) return;
-    const view = layout(width, world);
+    const view = makeView(width, world, zoom, pan);
     viewRef.current = view;
     const dpr = window.devicePixelRatio || 1;
     canvas.style.height = `${view.cssHeight}px`;
     canvas.width = Math.round(width * dpr);
     canvas.height = Math.round(view.cssHeight * dpr);
-    const ctx = canvas.getContext('2d');
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    draw(ctx, view, world, telemetry, { trail: trailRef.current.points, layers, pal: paletteRef.current, explored });
-  }, [telemetry, world, width, layers, explored]);
+    canvas.getContext('2d').setTransform(dpr, 0, 0, dpr, 0, 0);
+    dirtyRef.current = true;
+  }, [width, world, zoom, pan]);
 
-  const toWorld = (event) => {
-    if (!viewRef.current) return null;
-    const rect = canvasRef.current.getBoundingClientRect();
-    return pointerToWorld(viewRef.current, world, event.clientX - rect.left, event.clientY - rect.top);
+  // Single animation loop for the lifetime of the component.
+  useEffect(() => {
+    let raf;
+    const loop = () => {
+      raf = requestAnimationFrame(loop);
+      const canvas = canvasRef.current;
+      const view = viewRef.current;
+      const opts = optsRef.current;
+      if (!canvas || !view || !opts.pal) return;
+      const now = performance.now();
+      const anim = animRef.current;
+      // With effects off we only redraw when something changed (or a fade is running).
+      const fading = opts.rejected && now - opts.rejected.at < 1800;
+      if (!opts.effects && !dirtyRef.current && !fading) return;
+      dirtyRef.current = false;
+      try {
+        const state = anim.frame(now, opts.effects);
+        drawScene(canvas.getContext('2d'), view, world, state, { ...opts, now, anim });
+      } catch (err) {
+        console.error('Viewport render failed', err); // keep the dashboard alive
+      }
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [world]);
+
+  const zoomAt = (factor, px, py) => {
+    const view = viewRef.current;
+    if (!view) return;
+    const next = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom * factor));
+    if (next === zoom) return;
+    const cx = px ?? view.cssWidth / 2;
+    const cy = py ?? view.cssHeight / 2;
+    // Keep the world point under (cx, cy) fixed while zooming.
+    const k = next / zoom;
+    const nx = cx - view.m.left - (cx - view.m.left - pan.x) * k;
+    const ny = cy - view.m.top - (cy - view.m.top - pan.y) * k;
+    setZoom(next);
+    setPan(next === 1 ? { x: 0, y: 0 } : clampPan({ x: nx, y: ny }, next, view.cssWidth, view.cssHeight, world));
+  };
+  const resetView = () => {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
   };
 
+  const local = (e) => {
+    const rect = canvasRef.current.getBoundingClientRect();
+    return [e.clientX - rect.left, e.clientY - rect.top];
+  };
+  const toWorld = (px, py) => {
+    const view = viewRef.current;
+    if (!view) return null;
+    const p = view.toWorld(px, py);
+    if (p.x < 0 || p.y < 0 || p.x > world.width || p.y > world.height) return null;
+    return { x: Math.round(p.x * 100) / 100, y: Math.round(p.y * 100) / 100 };
+  };
+
+  const onPointerDown = (e) => {
+    const [px, py] = local(e);
+    dragRef.current = { px, py, startPan: pan, moved: false, id: e.pointerId };
+    if (zoom > 1) canvasRef.current.setPointerCapture?.(e.pointerId);
+  };
+  const onPointerMove = (e) => {
+    const [px, py] = local(e);
+    setHover(toWorld(px, py));
+    const d = dragRef.current;
+    if (!d || zoom <= 1) return;
+    const dx = px - d.px;
+    const dy = py - d.py;
+    if (!d.moved && Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
+    d.moved = true;
+    const view = viewRef.current;
+    setPan(clampPan({ x: d.startPan.x + dx, y: d.startPan.y + dy }, zoom, view.cssWidth, view.cssHeight, world));
+  };
+  const onPointerUp = (e) => {
+    const d = dragRef.current;
+    dragRef.current = null;
+    if (!d || d.moved) return;
+    const p = toWorld(...local(e));
+    if (p && telemetry) onMapClick(p);
+  };
+  const onWheel = (e) => {
+    if (!e.ctrlKey && !e.metaKey) return; // plain wheel keeps scrolling the page
+    e.preventDefault();
+    zoomAt(e.deltaY < 0 ? 1.2 : 1 / 1.2, ...local(e));
+  };
+  const onKeyDown = (e) => {
+    const stepPx = 40;
+    const view = viewRef.current;
+    const panBy = (dx, dy) => setPan((p) => clampPan({ x: p.x + dx, y: p.y + dy }, zoom, view.cssWidth, view.cssHeight, world));
+    const actions = {
+      '+': () => zoomAt(1.25),
+      '=': () => zoomAt(1.25),
+      '-': () => zoomAt(0.8),
+      0: resetView,
+      ArrowLeft: () => panBy(stepPx, 0),
+      ArrowRight: () => panBy(-stepPx, 0),
+      ArrowUp: () => panBy(0, stepPx),
+      ArrowDown: () => panBy(0, -stepPx),
+    };
+    if (actions[e.key]) {
+      e.preventDefault();
+      actions[e.key]();
+    }
+  };
+
+  // Ctrl+wheel needs a non-passive listener to prevent browser zoom.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return undefined;
+    canvas.addEventListener('wheel', onWheel, { passive: false });
+    return () => canvas.removeEventListener('wheel', onWheel);
+  });
+
   const r = telemetry?.robot;
-  const status = telemetry?.mission?.status;
+  const m = telemetry?.mission;
+  const status = m?.status;
+  const progress = m?.progress;
   const description = telemetry
-    ? `Simulation map ${world.width} by ${world.height} metres. Robot at x ${r.x.toFixed(1)}, y ${r.y.toFixed(
-        1,
-      )}, heading ${r.heading_deg} degrees. ${
-        telemetry.target ? `Target at x ${telemetry.target.x}, y ${telemetry.target.y}.` : 'No target selected.'
-      } Mission status ${status}. ${telemetry.obstacles.length} obstacles.`
+    ? `Simulation map ${world.width} by ${world.height} metres. Robot at x ${r.x.toFixed(1)}, y ${r.y.toFixed(1)}, heading ${
+        r.heading_deg
+      } degrees. ${telemetry.target ? `Target at x ${telemetry.target.x}, y ${telemetry.target.y}.` : 'No target selected.'} Mission status ${status}.`
     : 'Simulation map, waiting for telemetry.';
 
   return (
     <section className="panel viewport" aria-labelledby="viewport-title">
       <div className="panel-head">
         <h2 id="viewport-title">Mission workspace</h2>
-        <div className="viewport-meta">
-          {telemetry && <MissionStatusBadge status={status} waiting={telemetry.mission.waiting} />}
-          {telemetry && (
-            <span className="mono muted" title="Simulation clock">
-              t = {telemetry.sim_time.toFixed(1)} s
-            </span>
-          )}
-        </div>
+        <label className="check">
+          <input type="checkbox" checked={effects} onChange={(e) => setEffects(e.target.checked)} />
+          Motion effects
+        </label>
       </div>
       <p className="muted small viewport-caption">
-        Rendered top-down map of the simulation (not a camera image). Obstacles are ground-truth geometry
+        Top-down visualisation of the backend simulation state (not a camera feed). Robot pose is smoothed between telemetry
+        samples, never extrapolated. Obstacles are simulator ground truth
         {telemetry?.safety?.physics === 'pybullet' ? ', collision-checked in PyBullet.' : '.'}
       </p>
 
-      <div className="viewport-canvas" ref={wrapRef}>
+      <div className="viewport-stage" ref={wrapRef}>
         <canvas
           ref={canvasRef}
           role="img"
-          aria-label={description}
-          className={clickMode === 'obstacle' ? 'cursor-obstacle' : 'cursor-target'}
-          onClick={(e) => {
-            const p = toWorld(e);
-            if (p && telemetry) onMapClick(p);
-          }}
-          onPointerMove={(e) => setHover(toWorld(e))}
+          tabIndex={0}
+          aria-label={`${description} Use plus and minus to zoom, arrow keys to pan, zero to reset the view.`}
+          className={`sim-canvas ${clickMode === 'obstacle' ? 'cursor-obstacle' : 'cursor-target'}${zoom > 1 ? ' zoomed' : ''}`}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onPointerCancel={() => (dragRef.current = null)}
           onPointerLeave={() => setHover(null)}
+          onKeyDown={onKeyDown}
         />
+
+        {telemetry && (
+          <div className="hud" aria-hidden="true">
+            <MissionStatusBadge status={status} waiting={m.waiting} />
+            <div className="hud-progress">
+              <span style={{ width: `${(progress ?? 0) * 100}%` }} />
+            </div>
+            <span className="hud-line mono">
+              {progress === null ? 'progress unavailable' : `${Math.round(progress * 100)}% of route`} &middot; to target{' '}
+              {fmtM(telemetry.distance_to_target)}
+            </span>
+            <span className="hud-line mono">t = {telemetry.sim_time.toFixed(1)} s</span>
+          </div>
+        )}
+
+        <div className="view-controls" role="group" aria-label="Map view">
+          <button type="button" onClick={() => zoomAt(1.25)} disabled={zoom >= MAX_ZOOM} aria-label="Zoom in">
+            +
+          </button>
+          <button type="button" onClick={() => zoomAt(0.8)} disabled={zoom <= MIN_ZOOM} aria-label="Zoom out">
+            &minus;
+          </button>
+          <button type="button" onClick={resetView} disabled={zoom === 1} aria-label="Reset view" className="view-reset">
+            Fit
+          </button>
+        </div>
+
         {!telemetry && (
           <div className="viewport-overlay" role="status">
             {connection === 'closed' ? (
@@ -148,15 +299,23 @@ export function SimulationViewport({ telemetry, world, clickMode, onMapClick, co
             )}
           </div>
         )}
+        {telemetry && connection !== 'open' && (
+          <div className="viewport-stale" role="status">
+            {connection === 'stale' ? 'Telemetry delayed: showing last known state' : 'Reconnecting to the backend...'}
+          </div>
+        )}
       </div>
 
       <div className="viewport-foot">
         <p className="hint">
           {clickMode === 'obstacle'
-            ? 'Click or tap the map to place an obstacle.'
-            : 'Click or tap the map to set the target, or enter coordinates in Mission controls.'}
+            ? selectedObstacle
+              ? `Click a free spot to move ${selectedObstacle}, or click it again to deselect.`
+              : 'Click empty floor to place an obstacle, or click an obstacle you added to move it.'
+            : 'Click or tap the map to set the target.'}{' '}
+          {zoom > 1 ? 'Drag to pan.' : 'Zoom with the buttons or Ctrl + wheel.'}
           <span className="mono pointer-readout" aria-hidden="true">
-            {hover ? ` x ${hover.x.toFixed(2)}  y ${hover.y.toFixed(2)} m` : ''}
+            {hover ? `  x ${hover.x.toFixed(2)}  y ${hover.y.toFixed(2)} m` : ''}
           </span>
         </p>
         <fieldset className="layer-toggles">
@@ -169,12 +328,14 @@ export function SimulationViewport({ telemetry, world, clickMode, onMapClick, co
           ))}
         </fieldset>
         <ul className="legend" aria-label="Map legend">
-          <li><span className="sw sw-robot" aria-hidden="true" />Robot and heading</li>
-          <li><span className="sw sw-path" aria-hidden="true" />A* route and waypoints</li>
+          <li><span className="sw sw-robot" aria-hidden="true" />Robot, wheels and heading</li>
+          <li><span className="sw sw-path" aria-hidden="true" />A* route, active waypoint ringed</li>
+          <li><span className="sw sw-ghost" aria-hidden="true" />Previous route (after replan)</li>
           <li><span className="sw sw-target" aria-hidden="true" />Target</li>
           <li><span className="sw sw-static" aria-hidden="true" />Static obstacle</li>
           <li><span className="sw sw-dynamic" aria-hidden="true" />Added obstacle</li>
           <li><span className="sw sw-person" aria-hidden="true" />Person (moving)</li>
+          <li><span className="sw sw-alert" aria-hidden="true" />Obstacle that blocked the route</li>
           <li><span className="sw sw-track" aria-hidden="true">&times;</span>Camera-derived track</li>
           <li><span className="sw sw-inflation" aria-hidden="true" />Planner safety zone</li>
           {layers.explored && <li><span className="sw sw-unknown" aria-hidden="true" />Not yet seen by camera</li>}

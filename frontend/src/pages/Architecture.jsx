@@ -62,7 +62,7 @@ export default function Architecture() {
         <h1>Perception, planning, action, and continuous replanning</h1>
         <p className="lede">
           Select a stage to see what it does, its inputs and outputs, how it is implemented, and its live state in the running
-          backend. Status labels show what is implemented, simulation-only, running with a fallback, or planned.
+          backend. Status labels show what is implemented, simulation-only, or running with a labelled fallback.
         </p>
       </header>
 

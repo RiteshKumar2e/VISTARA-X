@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { MissionProcess } from '../components/MissionProcess';
 import { StatusTag } from '../components/StatusTag';
-import { LIMITATIONS, MARKET, MISSION, PROBLEM, ROADMAP, SOLUTION, TEAM } from '../content/deck';
+import { LIMITATIONS, MARKET, MISSION, PROBLEM, SOLUTION, TEAM } from '../content/deck';
 import { usePageMeta } from '../hooks/usePageMeta';
 
 export default function Overview() {
@@ -171,24 +171,6 @@ export default function Overview() {
         </div>
       </section>
 
-      <section className="section" aria-labelledby="future-h">
-        <div className="section-head">
-          <p className="eyebrow">Future scope</p>
-          <h2 id="future-h">{ROADMAP.title}</h2>
-        </div>
-        <ol className="phase-strip">
-          {ROADMAP.phases.map((p) => (
-            <li key={p.phase}>
-              <span className="mono muted">{p.phase}</span>
-              <strong>{p.title}</strong>
-              <StatusTag status={p.status === 'implemented' ? 'implemented' : 'planned'} />
-            </li>
-          ))}
-        </ol>
-        <p>
-          <Link to="/roadmap">See the full roadmap and limitations</Link>
-        </p>
-      </section>
 
       <section className="section" id="team" aria-labelledby="team-h">
         <div className="section-head">

@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { ARCHITECTURE, ARCHITECTURE_LAYERS } from '../content/deck';
+import { ARCHITECTURE, ARCHITECTURE_LAYERS, STAGE_LIMITS } from '../content/deck';
 import { StatusTag } from './StatusTag';
 
 const n = (v, d = 2) => (v === null || v === undefined ? '—' : Number(v).toFixed(d));
@@ -54,6 +54,18 @@ function liveRows(key, t) {
       return [
         ['Pose', `x ${n(t.robot.x)}, y ${n(t.robot.y)} m, ${t.robot.heading_deg}°`],
         ['Command', `${n(t.robot.v)} m/s, ${n(t.robot.w)} rad/s`],
+      ];
+    case 'grid':
+      return [
+        ['Planner inflation', `${n(t.safety.inflation)} m (radius + margin)`],
+        ['Obstacles rasterised', t.obstacles.length],
+        ['Map observed by camera', `${Math.round((t.perception.explored ?? 0) * 100)}%`],
+      ];
+    case 'telemetry':
+      return [
+        ['Telemetry version', t.version],
+        ['Sequence number', t.seq],
+        ['Events in snapshot', t.events.length],
       ];
     case 'safety':
       return [
@@ -155,6 +167,8 @@ export function ArchitectureExplorer({ telemetry, connection }) {
             </span>
           ))}
         </p>
+        <h4 className="sub">Limitations</h4>
+        <p>{STAGE_LIMITS[stage.id]}</p>
         <h4 className="sub">Live from the backend</h4>
         {rows ? (
           <dl className="kv-grid">

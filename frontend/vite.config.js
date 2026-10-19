@@ -1,7 +1,7 @@
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 
-const PUBLIC_ROUTES = ['/', '/mission', '/architecture', '/technology', '/roadmap', '/privacy', '/terms'];
+const PUBLIC_ROUTES = ['/', '/mission', '/architecture', '/technology', '/privacy', '/terms'];
 
 // Writes sitemap.xml + a robots.txt Sitemap line, and a canonical link, only when
 // the real public origin is configured. We never invent a domain.

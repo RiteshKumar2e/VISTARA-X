@@ -302,6 +302,12 @@ class SimulationEngine:
             self._in_collision = in_collision
 
     def _step_planning(self) -> None:
+        causes = {
+            "mission_start": "Planning route with A*",
+            "target_changed": "Target changed; planning a new route with A*",
+            "resume": "Planning route from the current pose with A*",
+        }
+        self._event("info", "planning", causes.get(self._plan_cause, "Planning route with A*"))
         if self._plan(self._plan_cause):
             self.status = "navigating"
             self.status_reason = ""
@@ -546,7 +552,26 @@ class SimulationEngine:
             if changes:
                 self._event("info", "config", "Parameters updated: " + ", ".join(changes))
 
-    def _check_new_obstacle(self, obs: Obstacle) -> None:
+    def move_obstacle(self, obstacle_id: str, x: float, y: float) -> dict:
+        """Move an operator-added obstacle. Scenario obstacles cannot be moved."""
+        with self._lock:
+            obs = next((o for o in self.world.obstacles if o.id == obstacle_id), None)
+            if obs is None:
+                raise CommandError("not_found", f"No obstacle '{obstacle_id}'", 404)
+            if not obstacle_id.startswith("user-"):
+                raise CommandError("not_movable", "Only obstacles you added can be moved")
+            old = (obs.x, obs.y)
+            obs.x, obs.y = x, y
+            try:
+                self._check_new_obstacle(obs, count_limit=False)
+            except CommandError:
+                obs.x, obs.y = old
+                raise
+            self._grid_dirty = True
+            self._event("warning", "obstacle", f"Obstacle {obstacle_id} moved to ({x:.2f}, {y:.2f})")
+            return obs.to_dict()
+
+    def _check_new_obstacle(self, obs: Obstacle, count_limit: bool = True) -> None:
         r = self.world.robot
         if not self.world.in_bounds(obs.x, obs.y):
             raise CommandError("out_of_bounds", "Obstacle must be inside the map", 422)
@@ -554,7 +579,7 @@ class SimulationEngine:
             raise CommandError("too_close_to_robot", "Obstacle would overlap the robot")
         if self.target and float(obs.distance(*self.target)) < ROBOT_RADIUS + 0.2:
             raise CommandError("covers_target", "Obstacle would cover the target")
-        if self._user_obstacles >= MAX_USER_OBSTACLES:
+        if count_limit and self._user_obstacles >= MAX_USER_OBSTACLES:
             raise CommandError("too_many_obstacles", f"At most {MAX_USER_OBSTACLES} added obstacles")
 
     def add_obstacle(self, x: float, y: float, shape: str = "rect", size: float = 0.8,

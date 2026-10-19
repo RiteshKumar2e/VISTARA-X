@@ -7,8 +7,13 @@ const LEVEL = {
   error: 'Error',
 };
 
-export function EventLog({ telemetry }) {
-  const events = telemetry?.events ? [...telemetry.events].reverse() : [];
+const MAX_SHOWN = 100;
+
+/** Backend mission events merged with frontend-observed connection events, newest first. */
+export function EventLog({ telemetry, localEvents = [] }) {
+  const events = [...(telemetry?.events || []), ...localEvents]
+    .sort((a, b) => (a.timestamp < b.timestamp ? 1 : a.timestamp > b.timestamp ? -1 : 0))
+    .slice(0, MAX_SHOWN);
   return (
     <section className="panel events" aria-labelledby="events-title">
       <div className="panel-head">
@@ -21,14 +26,14 @@ export function EventLog({ telemetry }) {
             {events.map((e) => (
               <motion.li
                 key={e.id}
-                className={`event event-${e.level}`}
+                className={`event event-${e.level}${e.local ? ' event-local' : ''}`}
                 initial={{ opacity: 0, backgroundColor: 'rgba(15, 110, 106, 0.12)' }}
                 animate={{ opacity: 1, backgroundColor: 'rgba(15, 110, 106, 0)' }}
                 transition={{ duration: 0.8 }}
               >
               <span className="event-level">{LEVEL[e.level] || e.level}</span>
               <time className="mono event-time" dateTime={e.timestamp} title={new Date(e.timestamp).toLocaleString()}>
-                {e.sim_time.toFixed(1)} s
+                {e.local ? 'client' : `${e.sim_time.toFixed(1)} s`}
               </time>
               <span className="event-msg">{e.message}</span>
               </motion.li>

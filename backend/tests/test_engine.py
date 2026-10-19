@@ -197,3 +197,27 @@ def test_heading_is_wrapped(engine):
     engine.navigate()
     assert run_until(engine, {"goal_reached"})
     assert -math.pi <= engine.world.robot.theta <= math.pi
+
+
+def test_move_added_obstacle(engine):
+    engine.add_obstacle(3.0, 9.0)
+    moved = engine.move_obstacle("user-1", 3.0, 10.0)
+    assert moved["y"] == 10.0
+    with pytest.raises(CommandError) as err:
+        engine.move_obstacle("user-1", 1.6, 6.0)  # onto the robot: rejected, position kept
+    assert err.value.code == "too_close_to_robot"
+    assert next(o for o in engine.world.obstacles if o.id == "user-1").y == 10.0
+    with pytest.raises(CommandError) as err:
+        engine.move_obstacle("shelf-1", 3.0, 3.0)
+    assert err.value.code == "not_movable"
+    with pytest.raises(CommandError) as err:
+        engine.move_obstacle("user-99", 3.0, 3.0)
+    assert err.value.code == "not_found"
+
+
+def test_planning_event_logged(engine):
+    engine.set_target(18.5, 6.0)
+    engine.navigate()
+    engine.step()
+    types = [e["type"] for e in engine.events]
+    assert types.index("planning") < types.index("route_planned")

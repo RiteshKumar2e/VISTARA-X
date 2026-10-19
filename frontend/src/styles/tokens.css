@@ -37,6 +37,32 @@
   --map-unknown: #e4e1da;
   --map-robot: #1b1d1f;
 
+  /* Simulation viewport: dark technical environment with its own contrast */
+  --sim-bg: #15191c;
+  --sim-floor: #20262a;
+  --sim-grid: rgba(255, 255, 255, 0.05);
+  --sim-grid-major: rgba(255, 255, 255, 0.12);
+  --sim-wall: #66717a;
+  --sim-unknown: rgba(0, 0, 0, 0.38);
+  --sim-static: #6b6359;
+  --sim-static-top: #857b6e;
+  --sim-dynamic: #d9a441;
+  --sim-dynamic-edge: #f3d38a;
+  --sim-person: #6fa8dc;
+  --sim-inflation: rgba(240, 120, 110, 0.45);
+  --sim-path: #3fc1b5;
+  --sim-ghost: rgba(225, 225, 225, 0.6);
+  --sim-trail: #9fb3bf;
+  --sim-robot: #f2f1ee;
+  --sim-robot-edge: #0e1113;
+  --sim-wheel: #0b0d0e;
+  --sim-fov: rgba(63, 193, 181, 0.3);
+  --sim-track: #ff8a7a;
+  --sim-target: #ffd166;
+  --sim-danger: #ff6b5e;
+  --sim-text: #9aa5ab;
+  --sim-label: #e4e7e9;
+
   /* Typography */
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial,
     "Noto Sans", sans-serif;

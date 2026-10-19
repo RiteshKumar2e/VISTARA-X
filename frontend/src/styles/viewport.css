@@ -1,0 +1,185 @@
+/* Simulation viewport, map overlays and dashboard display upgrades. */
+
+.viewport-stage {
+  position: relative;
+  width: 100%;
+  min-height: 180px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--sim-bg);
+}
+.sim-canvas {
+  display: block;
+  width: 100%;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.sim-canvas.zoomed {
+  touch-action: none; /* allow one-finger panning while zoomed */
+  cursor: grab;
+}
+.sim-canvas:focus-visible {
+  outline: 2px solid var(--sim-path);
+  outline-offset: -2px;
+  box-shadow: none;
+}
+
+/* Heads-up display: real mission state over the map. */
+.hud {
+  position: absolute;
+  top: var(--space-3);
+  left: calc(var(--space-3) + 24px);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--space-2) var(--space-3);
+  background: rgba(14, 17, 19, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-sm);
+  color: var(--sim-label);
+  pointer-events: none;
+  max-width: calc(100% - 140px);
+}
+.hud .badge {
+  align-self: flex-start;
+}
+.hud-progress {
+  height: 4px;
+  width: 160px;
+  max-width: 100%;
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.hud-progress span {
+  display: block;
+  height: 100%;
+  background: var(--sim-path);
+  transition: width 300ms ease;
+}
+.hud-line {
+  font-size: 11px;
+  color: var(--sim-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.view-controls {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: rgba(14, 17, 19, 0.82);
+}
+.view-controls button {
+  width: 36px;
+  height: 34px;
+  border: 0;
+  background: transparent;
+  color: var(--sim-label);
+  font: inherit;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+.view-controls button + button {
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+.view-controls button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+}
+.view-controls button:disabled {
+  color: rgba(255, 255, 255, 0.3);
+  cursor: default;
+}
+.view-controls button:focus-visible {
+  outline: 2px solid var(--sim-path);
+  outline-offset: -2px;
+  box-shadow: none;
+}
+.view-controls .view-reset {
+  font-size: 11px;
+  font-weight: 600;
+}
+.viewport-stale {
+  position: absolute;
+  left: 50%;
+  bottom: var(--space-6);
+  transform: translateX(-50%);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.viewport-stage .viewport-overlay {
+  background: rgba(21, 25, 28, 0.9);
+  color: var(--sim-text);
+}
+.viewport-stage .viewport-overlay strong {
+  color: var(--sim-label);
+}
+
+@media (max-width: 520px) {
+  .hud {
+    top: var(--space-2);
+    left: var(--space-2);
+    padding: 6px var(--space-2);
+    max-width: calc(100% - 64px);
+  }
+  .hud-progress {
+    width: 110px;
+  }
+  .view-controls {
+    top: var(--space-2);
+    right: var(--space-2);
+  }
+}
+
+/* Legend swatches matching the viewport palette. */
+.legend .sw-robot {
+  background: var(--sim-robot);
+  border: 2px solid var(--sim-robot-edge);
+}
+.legend .sw-path {
+  background: var(--sim-path);
+}
+.legend .sw-target {
+  border: 2px solid #c79a1f;
+  border-radius: 50%;
+  width: 10px;
+}
+.legend .sw-static {
+  background: var(--sim-static);
+  border: 1px solid var(--sim-static-top);
+}
+.legend .sw-dynamic {
+  background: var(--sim-dynamic);
+  border: 2px solid #9a6a12;
+}
+.legend .sw-person {
+  background: var(--sim-person);
+}
+.sw-ghost {
+  height: 0;
+  border-top: 2px dashed var(--color-text-faint);
+}
+.sw-alert {
+  border: 2px solid var(--color-danger);
+}
+.legend .sw-track {
+  color: var(--color-danger);
+}
+
+/* Event timeline source marker. */
+.event-local .event-level {
+  color: var(--color-text-faint);
+}

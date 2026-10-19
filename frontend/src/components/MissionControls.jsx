@@ -39,7 +39,7 @@ export function validateTarget(xRaw, yRaw, world, margin) {
   return { errors, x, y };
 }
 
-export function MissionControls({ telemetry, command, online, scenarios, world, clickMode, setClickMode }) {
+export function MissionControls({ telemetry, command, online, scenarios, world, clickMode, setClickMode, onRestartDemo }) {
   const { pending, feedback, run, clearFeedback } = command;
   const status = telemetry?.mission?.status;
   const waiting = telemetry?.mission?.waiting;
@@ -145,6 +145,7 @@ export function MissionControls({ telemetry, command, online, scenarios, world, 
             pending={pending}
             icon={StopIcon}
             disabled={!canStop || !!pending}
+            title="Stops immediately (no confirmation): the robot halts safely and the mission can be restarted."
             onClick={() => run('stop', api.stop, () => 'Mission stopped; robot halted')}
           >
             Stop
@@ -247,6 +248,10 @@ export function MissionControls({ telemetry, command, online, scenarios, world, 
 
       <div className="control-group">
         <h3>Obstacles</h3>
+        <p className="hint hint-top">
+          Use <strong>Place obstacle</strong> above to add one by clicking the map, or click an added obstacle to select it and
+          click again elsewhere to move it.
+        </p>
         <div className="button-row">
           <CommandButton
             name="inject"
@@ -268,6 +273,15 @@ export function MissionControls({ telemetry, command, online, scenarios, world, 
           </CommandButton>
         </div>
         <p className="hint">Dropping an obstacle requires a running mission; it lands a few metres ahead on the active route.</p>
+      </div>
+
+      <div className="control-group">
+        <h3>Demo</h3>
+        <button type="button" className="btn" disabled={disabled || !!pending} onClick={onRestartDemo}>
+          <ResetIcon size={15} />
+          Restart guided demo
+        </button>
+        <p className="hint">Resets the warehouse scenario and replays the judging walkthrough on the live simulation.</p>
       </div>
 
       <div className="control-group">

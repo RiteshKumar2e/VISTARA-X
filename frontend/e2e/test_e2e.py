@@ -18,8 +18,8 @@ FRONTEND = os.getenv("E2E_FRONTEND_URL", "http://localhost:5173")
 BACKEND = os.getenv("E2E_BACKEND_URL", "http://localhost:8000")
 SHOTS = Path(os.getenv("E2E_SCREENSHOT_DIR", Path(__file__).parent / "screenshots"))
 WIDTHS = [320, 375, 390, 768, 1024, 1440]
-ROUTES = ["/", "/mission", "/architecture", "/technology", "/roadmap", "/privacy", "/terms", "/does-not-exist"]
-INTERNAL = {"/", "/mission", "/architecture", "/technology", "/roadmap", "/privacy", "/terms"}
+ROUTES = ["/", "/mission", "/architecture", "/technology", "/privacy", "/terms", "/does-not-exist"]
+INTERNAL = {"/", "/mission", "/architecture", "/technology", "/privacy", "/terms"}
 
 
 @pytest.fixture(scope="session")
@@ -313,3 +313,47 @@ def test_overview_process_and_tooltips(page):
 
 
 SHOTS.mkdir(parents=True, exist_ok=True)
+
+
+def test_viewport_zoom_effects_and_obstacle_move(page):
+    open_console(page)
+    stage = page.locator(".viewport")
+    zoom_in = stage.get_by_role("button", name="Zoom in")
+    fit = stage.get_by_role("button", name="Reset view")
+    expect(fit).to_be_disabled()
+    zoom_in.click()
+    zoom_in.click()
+    expect(fit).to_be_enabled()
+    fit.click()
+    expect(fit).to_be_disabled()
+    effects = stage.get_by_label("Motion effects")
+    effects.uncheck()
+    expect(effects).not_to_be_checked()
+    effects.check()
+    # Place an obstacle, select it, then move it - all confirmed by the backend.
+    page.get_by_text("Place obstacle", exact=True).click()
+    click_world(page, 3.0, 9.0)
+    expect(page.locator(".controls")).to_contain_text("Obstacle user-1 placed", timeout=5000)
+    click_world(page, 3.0, 9.0)
+    expect(page.locator(".viewport-foot")).to_contain_text("move user-1")
+    click_world(page, 3.0, 10.5)
+    expect(page.locator(".controls")).to_contain_text("Moved user-1", timeout=5000)
+    ob = next(o for o in telemetry(page)["obstacles"] if o["id"] == "user-1")
+    assert abs(ob["y"] - 10.5) < 0.1
+    # Invalid target: inside a shelf -> backend rejects, UI says why.
+    page.get_by_text("Set target", exact=True).first.click()
+    click_world(page, 5.0, 10.0)
+    expect(page.locator(".feedback-error")).to_contain_text("too close to shelf-1", timeout=5000)
+
+
+def test_system_status_and_restart_demo(page):
+    open_console(page)
+    status = page.locator(".system")
+    for name in ("Backend API", "Simulation", "Telemetry stream", "Navigation planner", "Robot controller", "Vision detector"):
+        expect(status).to_contain_text(name)
+    expect(status).to_contain_text("A* ready", timeout=10000)
+    page.get_by_role("button", name="Restart guided demo").click()
+    expect(page.locator(".demo")).to_contain_text("Running", timeout=5000)
+    expect(page.locator(".viewport [data-status]")).to_contain_text("Navigating", timeout=20000)
+    page.get_by_role("button", name="Pause walkthrough").click()
+    page.screenshot(path=str(SHOTS / "viewport-demo-running.png"))
