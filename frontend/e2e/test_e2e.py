@@ -12,6 +12,7 @@ import time
 from pathlib import Path
 
 import pytest
+import requests
 from playwright.sync_api import Page, expect, sync_playwright
 
 # Software-rendered headless Chromium is slower than a real browser; give UI checks room.
@@ -25,8 +26,9 @@ ROUTES = ["/", "/mission", "/architecture", "/technology", "/privacy", "/terms",
 INTERNAL = {"/", "/mission", "/architecture", "/technology", "/privacy", "/terms"}
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture
 def browser():
+    # A fresh browser per test: a long-lived software-WebGL browser degrades over a run.
     with sync_playwright() as p:
         # Software WebGL so the 3D viewport renders in headless CI.
         b = p.chromium.launch(args=["--use-angle=swiftshader", "--enable-unsafe-swiftshader"])
@@ -47,10 +49,13 @@ def page(browser):
     ctx.close()
 
 
+_http = requests.Session()
+
+
 def backend(page: Page, method: str, path: str, data=None):
-    req = page.request
-    fn = {"get": req.get, "post": req.post, "delete": req.delete}[method]
-    return fn(f"{BACKEND}{path}", data=data) if data is not None else fn(f"{BACKEND}{path}")
+    """Direct HTTP to the backend, independent of the browser (whose request client can
+    be starved while software WebGL renders). `page` is kept for call-site symmetry."""
+    return _http.request(method.upper(), f"{BACKEND}{path}", json=data, timeout=30)
 
 
 def telemetry(page):
@@ -91,18 +96,18 @@ def test_full_mission_via_ui(page):
     open_console(page)
     expect(page.get_by_role("button", name="Start mission")).to_be_disabled()
     click_world(page, 18.5, 6.0)
-    expect(page.locator(".controls")).to_contain_text("Target set to (18.", timeout=5000)
+    expect(page.locator(".controls")).to_contain_text("Target set to (18.")
     t = telemetry(page)
     assert abs(t["target"]["x"] - 18.5) < 0.1 and abs(t["target"]["y"] - 6.0) < 0.1
 
     page.get_by_role("button", name="Start mission").click()
-    expect(page.locator(".viewport [data-status]")).to_contain_text("Navigating", timeout=5000)
+    expect(page.locator(".viewport [data-status]")).to_contain_text("Navigating")
     assert len(telemetry(page)["path"]) >= 2
     page.screenshot(path=str(SHOTS / "mission-navigating.png"))
 
     wait_backend(page, lambda t: t["mission"]["distance_travelled"] >= 1.5)
     page.get_by_role("button", name="Drop obstacle on route").click()
-    expect(page.locator(".events")).to_contain_text("Replanned around", timeout=5000)
+    expect(page.locator(".events")).to_contain_text("Replanned around")
     assert telemetry(page)["mission"]["replans"] >= 1
     toast = page.locator(".toast").filter(has_text="Route replanned")
     expect(toast).to_be_visible(timeout=5000)
@@ -124,19 +129,19 @@ def test_pause_resume_stop_buttons(page):
     page.fill("#target-y", "6")
     page.get_by_role("button", name="Set target").click()
     page.get_by_role("button", name="Start mission").click()
-    expect(page.locator(".viewport [data-status]")).to_contain_text("Navigating", timeout=5000)
+    expect(page.locator(".viewport [data-status]")).to_contain_text("Navigating")
     page.get_by_role("button", name="Pause").click()
-    expect(page.locator(".viewport [data-status]")).to_contain_text("Paused", timeout=5000)
+    expect(page.locator(".viewport [data-status]")).to_contain_text("Paused")
     x = telemetry(page)["robot"]["x"]
     time.sleep(0.5)
     assert telemetry(page)["robot"]["x"] == x
     page.get_by_role("button", name="Resume").click()
-    expect(page.locator(".viewport [data-status]")).to_contain_text("Navigating", timeout=5000)
+    expect(page.locator(".viewport [data-status]")).to_contain_text("Navigating")
     page.get_by_role("button", name="Stop", exact=True).click()
-    expect(page.locator(".viewport [data-status]")).to_contain_text("Stopped", timeout=5000)
+    expect(page.locator(".viewport [data-status]")).to_contain_text("Stopped")
     # Reset during an active mission requires confirmation; when stopped it is immediate.
-    page.get_by_role("button", name="Reset").click()
-    expect(page.locator(".viewport [data-status]")).to_contain_text("Idle", timeout=5000)
+    page.get_by_role("button", name="Reset", exact=True).click()
+    expect(page.locator(".viewport [data-status]")).to_contain_text("Idle")
     assert telemetry(page)["target"] is None
 
 
@@ -160,9 +165,9 @@ def test_blocked_is_reported_honestly(page):
     page.fill("#target-x", "16")
     page.fill("#target-y", "6")
     page.get_by_role("button", name="Set target").click()
-    expect(page.locator(".controls")).to_contain_text("x 16.00", timeout=5000)
+    expect(page.locator(".controls")).to_contain_text("x 16.00")
     page.get_by_role("button", name="Start mission").click()
-    expect(page.locator(".viewport [data-status]")).to_contain_text("Blocked", timeout=5000)
+    expect(page.locator(".viewport [data-status]")).to_contain_text("Blocked")
     expect(page.locator(".panel").filter(has_text="Live telemetry")).to_contain_text("No collision-free route")
     assert telemetry(page)["mission"]["status"] == "blocked"
     page.screenshot(path=str(SHOTS / "blocked.png"))
@@ -262,7 +267,7 @@ def test_mobile_menu_and_touch_target(browser):
     box = page.locator(".plan-view canvas").bounding_box()
     scale = (box["width"] - 30) / 20
     page.touchscreen.tap(box["x"] + 20 + 10 * scale, box["y"] + 10 + (12 - 6) * scale)
-    expect(page.locator(".controls")).to_contain_text("Target set to", timeout=5000)
+    expect(page.locator(".controls")).to_contain_text("Target set to")
     ctx.close()
 
 
@@ -343,7 +348,7 @@ def test_3d_view_renders_and_selects_target(browser):
     page.wait_for_timeout(1500)
     box = canvas.bounding_box()
     page.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
-    expect(page.locator(".controls")).to_contain_text("Target set to", timeout=5000)
+    expect(page.locator(".controls")).to_contain_text("Target set to")
     t = telemetry(page)["target"]
     assert abs(t["x"] - 10) < 0.6 and abs(t["y"] - 6) < 0.6, t
     for name in ("Top", "Follow robot", "Orbit"):
@@ -393,11 +398,12 @@ def test_sensors_models_and_obstacle_removal(page):
     # Add, select and remove an obstacle through the UI.
     page.locator(".segmented label", has_text="Place obstacle").click()
     click_world(page, 3.0, 9.0)
-    expect(page.locator(".controls")).to_contain_text("placed", timeout=5000)
+    expect(page.locator(".controls")).to_contain_text("placed")
     oid = next(o["id"] for o in telemetry(page)["obstacles"] if o["id"].startswith("user-"))
+    page.wait_for_timeout(600)
     click_world(page, 3.0, 9.0)
     page.get_by_role("button", name=f"Remove {oid}").click()
-    expect(page.locator(".controls")).to_contain_text(f"Obstacle {oid} removed", timeout=5000)
+    expect(page.locator(".controls")).to_contain_text(f"Obstacle {oid} removed")
     assert not any(o["id"] == oid for o in telemetry(page)["obstacles"])
     backend(page, "post", "/sensors/configure", {"sensor": "ultrasonic", "enabled": True})
 
@@ -438,17 +444,18 @@ def test_viewport_zoom_effects_and_obstacle_move(page):
     # Place an obstacle, select it, then move it - all confirmed by the backend.
     page.locator(".segmented label", has_text="Place obstacle").click()
     click_world(page, 3.0, 9.0)
-    expect(page.locator(".controls")).to_contain_text("Obstacle user-1 placed", timeout=5000)
+    expect(page.locator(".controls")).to_contain_text("Obstacle user-1 placed")
+    page.wait_for_timeout(600)  # let telemetry deliver the new obstacle before selecting it
     click_world(page, 3.0, 9.0)
     expect(page.locator(".viewport-foot")).to_contain_text("move user-1")
     click_world(page, 3.0, 10.5)
-    expect(page.locator(".controls")).to_contain_text("Moved user-1", timeout=5000)
+    expect(page.locator(".controls")).to_contain_text("Moved user-1")
     ob = next(o for o in telemetry(page)["obstacles"] if o["id"] == "user-1")
     assert abs(ob["y"] - 10.5) < 0.1
     # Invalid target: inside a shelf -> backend rejects, UI says why.
     page.locator(".segmented label", has_text="Set target").click()
     click_world(page, 5.0, 10.0)
-    expect(page.locator(".feedback-error")).to_contain_text("too close to shelf-1", timeout=5000)
+    expect(page.locator(".feedback-error")).to_contain_text("too close to shelf-1")
 
 
 def test_system_status_and_restart_demo(page):
@@ -458,7 +465,7 @@ def test_system_status_and_restart_demo(page):
         expect(status).to_contain_text(name)
     expect(status).to_contain_text("A* ready", timeout=10000)
     page.get_by_role("button", name="Restart guided demo").click()
-    expect(page.locator(".demo")).to_contain_text("Running", timeout=5000)
+    expect(page.locator(".demo")).to_contain_text("Running")
     expect(page.locator(".viewport [data-status]")).to_contain_text("Navigating", timeout=20000)
     page.get_by_role("button", name="Pause walkthrough").click()
     page.screenshot(path=str(SHOTS / "viewport-demo-running.png"))

@@ -618,6 +618,10 @@ class SimulationEngine:
             raise CommandError("too_close_to_robot", "Obstacle would overlap the robot")
         if self.target and float(obs.distance(*self.target)) < ROBOT_RADIUS + 0.2:
             raise CommandError("covers_target", "Obstacle would cover the target")
+        # Reject stacking (centre on or inside another obstacle); touching is allowed.
+        for other in self.world.obstacles:
+            if other.id != obs.id and float(other.distance(obs.x, obs.y)) < 0.1:
+                raise CommandError("overlaps_obstacle", f"Obstacle would overlap {other.id}")
         if count_limit and self._user_obstacles >= MAX_USER_OBSTACLES:
             raise CommandError("too_many_obstacles", f"At most {MAX_USER_OBSTACLES} added obstacles")
 

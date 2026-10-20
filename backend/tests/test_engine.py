@@ -243,3 +243,13 @@ def test_add_standing_and_walking_person(engine):
         engine.add_obstacle(3.0, 9.0, label="crate", patrol_to=(3.0, 11.0))
     assert run_until(engine, {"goal_reached", "blocked"}, max_seconds=180)
     assert engine.collisions == 0
+
+
+def test_obstacles_cannot_overlap(engine):
+    engine.add_obstacle(3.0, 9.0)
+    with pytest.raises(CommandError) as err:
+        engine.add_obstacle(3.1, 9.1)
+    assert err.value.code == "overlaps_obstacle"
+    with pytest.raises(CommandError):
+        engine.add_obstacle(5.0, 9.5)  # inside shelf-1
+    engine.add_obstacle(3.0, 10.6)  # clear of both
