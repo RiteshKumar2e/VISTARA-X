@@ -144,8 +144,10 @@
   width: min(360px, calc(100vw - 2 * var(--space-4)));
   pointer-events: none;
 }
+/* Toasts sit over the console's controls: clicks pass through them to the button
+   underneath; only the dismiss button takes pointer input. */
 .toast {
-  pointer-events: auto;
+  pointer-events: none;
   display: flex;
   align-items: flex-start;
   gap: var(--space-2);
@@ -156,6 +158,9 @@
   padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
   box-shadow: 0 4px 16px rgba(27, 29, 31, 0.08);
   font-size: var(--text-sm);
+}
+.toast button {
+  pointer-events: auto;
 }
 .toast p {
   margin: 0;
