@@ -547,7 +547,19 @@ export function drawScene(ctx, view, world, state, opts) {
       }
     }
 
-    drawRobot(ctx, view, pose, pal, anim.wheelPhase, t.safety?.warning);
+    // Simulated LiDAR returns (drawn from the authoritative pose of the scan).
+    const lidar = t.sensors?.sensors?.find((s) => s.key === 'lidar');
+    if (layers.lidar && lidar?.enabled && lidar.reading) {
+      const rp = t.robot;
+      for (const [bearing, range] of lidar.reading.scan) {
+        if (range === null) continue;
+        const a = rp.theta + (bearing * Math.PI) / 180;
+        ctx.fillStyle = range - 0.3 < 0.9 ? '#ff9f5a' : '#7fe3d9';
+        ctx.fillRect(X(rp.x + range * Math.cos(a)) - 1.5, Y(rp.y + range * Math.sin(a)) - 1.5, 3, 3);
+      }
+    }
+    const prox = t.sensors?.proximity?.action;
+    drawRobot(ctx, view, pose, pal, anim.wheelPhase, t.safety?.warning || prox === 'stop');
   }
 
   // Rejected target click (invalid or unsafe point), shown briefly.

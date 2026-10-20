@@ -39,7 +39,18 @@ export function validateTarget(xRaw, yRaw, world, margin) {
   return { errors, x, y };
 }
 
-export function MissionControls({ telemetry, command, online, scenarios, world, clickMode, setClickMode, onRestartDemo }) {
+export function MissionControls({
+  telemetry,
+  command,
+  online,
+  scenarios,
+  world,
+  clickMode,
+  setClickMode,
+  onRestartDemo,
+  selectedObstacle,
+  onRemoveObstacle,
+}) {
   const { pending, feedback, run, clearFeedback } = command;
   const status = telemetry?.mission?.status;
   const waiting = telemetry?.mission?.waiting;
@@ -270,6 +281,15 @@ export function MissionControls({ telemetry, command, online, scenarios, world, 
             onClick={() => run('clear', api.clearObstacles, (r) => `Removed ${r.removed} added obstacle(s)`)}
           >
             Clear added
+          </CommandButton>
+          <CommandButton
+            name="remove"
+            pending={pending}
+            icon={ClearIcon}
+            disabled={disabled || !selectedObstacle || !!pending}
+            onClick={onRemoveObstacle}
+          >
+            {selectedObstacle ? `Remove ${selectedObstacle}` : 'Remove selected'}
           </CommandButton>
         </div>
         <p className="hint">Dropping an obstacle requires a running mission; it lands a few metres ahead on the active route.</p>

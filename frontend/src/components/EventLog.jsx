@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 
 const LEVEL = {
@@ -7,11 +8,15 @@ const LEVEL = {
   error: 'Error',
 };
 
-const MAX_SHOWN = 100;
+const MAX_SHOWN = 40;
 
-/** Backend mission events merged with frontend-observed connection events, newest first. */
-export function EventLog({ telemetry, localEvents = [] }) {
-  const events = [...(telemetry?.events || []), ...localEvents]
+const lastId = (list) => (list?.length ? list[list.length - 1].id : null);
+
+/** Backend mission events merged with frontend-observed connection events, newest first.
+ *  Re-renders only when the event lists change, not on every telemetry message. */
+export const EventLog = memo(
+  function EventLog({ events: backendEvents, localEvents = [] }) {
+  const events = [...(backendEvents || []), ...localEvents]
     .sort((a, b) => (a.timestamp < b.timestamp ? 1 : a.timestamp > b.timestamp ? -1 : 0))
     .slice(0, MAX_SHOWN);
   return (
@@ -45,4 +50,9 @@ export function EventLog({ telemetry, localEvents = [] }) {
       )}
     </section>
   );
-}
+  },
+  (a, b) =>
+    lastId(a.events) === lastId(b.events) &&
+    a.events?.length === b.events?.length &&
+    a.localEvents === b.localEvents,
+);

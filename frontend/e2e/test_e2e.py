@@ -14,6 +14,9 @@ from pathlib import Path
 import pytest
 from playwright.sync_api import Page, expect, sync_playwright
 
+# Software-rendered headless Chromium is slower than a real browser; give UI checks room.
+expect.set_options(timeout=10_000)
+
 FRONTEND = os.getenv("E2E_FRONTEND_URL", "http://localhost:5173")
 BACKEND = os.getenv("E2E_BACKEND_URL", "http://localhost:8000")
 SHOTS = Path(os.getenv("E2E_SCREENSHOT_DIR", Path(__file__).parent / "screenshots"))
@@ -65,7 +68,12 @@ def wait_backend(page, predicate, timeout=90):
 
 
 def open_console(page):
-    backend(page, "post", "/simulation/reset", {"scenario": "warehouse"})
+    for _ in range(3):  # the reset must succeed; never test against leftover state
+        if backend(page, "post", "/simulation/reset", {"scenario": "warehouse"}).ok:
+            break
+        time.sleep(1)
+    else:
+        raise AssertionError("backend reset failed")
     page.goto(FRONTEND + "/mission")
     expect(page.locator(".viewport [data-status]")).to_contain_text("Idle", timeout=15000)
 
@@ -124,7 +132,7 @@ def test_pause_resume_stop_buttons(page):
     assert telemetry(page)["robot"]["x"] == x
     page.get_by_role("button", name="Resume").click()
     expect(page.locator(".viewport [data-status]")).to_contain_text("Navigating", timeout=5000)
-    page.get_by_role("button", name="Stop").click()
+    page.get_by_role("button", name="Stop", exact=True).click()
     expect(page.locator(".viewport [data-status]")).to_contain_text("Stopped", timeout=5000)
     # Reset during an active mission requires confirmation; when stopped it is immediate.
     page.get_by_role("button", name="Reset").click()
@@ -352,6 +360,65 @@ def test_3d_view_renders_and_selects_target(browser):
     ctx.close()
 
 
+
+def test_sensors_models_and_obstacle_removal(page):
+    open_console(page)
+    for name in ("lidar", "ultrasonic"):
+        backend(page, "post", "/sensors/configure", {"sensor": name, "enabled": True})
+    sensors = page.locator(".sensors")
+    expect(sensors).to_contain_text("All simulated")
+    expect(sensors).to_contain_text("2D LiDAR (simulated)")
+    expect(sensors.locator(".prox")).to_contain_text("Clear", timeout=10000)
+    # Turn both proximity sensors off: the UI must show the fail-safe state from the backend.
+    # Controlled checkboxes: click, then wait for the backend-confirmed state.
+    lidar_box = sensors.get_by_label("Enable 2D LiDAR (simulated)")
+    us_box = sensors.get_by_label("Enable Ultrasonic ring (simulated)")
+    lidar_box.click()
+    expect(lidar_box).not_to_be_checked()
+    us_box.click()
+    expect(us_box).not_to_be_checked()
+    page.fill("#target-x", "18.5")
+    page.fill("#target-y", "6")
+    page.get_by_role("button", name="Set target").click()
+    page.get_by_role("button", name="Start mission").click()
+    expect(sensors.locator(".prox")).to_contain_text("Fail-safe speed", timeout=10000)
+    lidar_box.click()
+    expect(lidar_box).to_be_checked()
+    expect(sensors.locator(".prox")).not_to_contain_text("Fail-safe", timeout=10000)
+    page.get_by_role("button", name="Stop", exact=True).click()
+    # Model registry lists the simulated detector and is driven by the backend.
+    models = page.locator("section", has=page.locator("#models-title"))
+    expect(models).to_contain_text("Ground truth, not a model")
+    assert backend(page, "get", "/models").json()["models"][0]["key"] == "simulated"
+    # Add, select and remove an obstacle through the UI.
+    page.locator(".segmented label", has_text="Place obstacle").click()
+    click_world(page, 3.0, 9.0)
+    expect(page.locator(".controls")).to_contain_text("placed", timeout=5000)
+    oid = next(o["id"] for o in telemetry(page)["obstacles"] if o["id"].startswith("user-"))
+    click_world(page, 3.0, 9.0)
+    page.get_by_role("button", name=f"Remove {oid}").click()
+    expect(page.locator(".controls")).to_contain_text(f"Obstacle {oid} removed", timeout=5000)
+    assert not any(o["id"] == oid for o in telemetry(page)["obstacles"])
+    backend(page, "post", "/sensors/configure", {"sensor": "ultrasonic", "enabled": True})
+
+
+
+def test_add_walking_person(page):
+    open_console(page)
+    page.locator(".segmented label", has_text="Place obstacle").click()
+    page.select_option("#object-type", "person-walking")
+    click_world(page, 12.0, 6.0)
+    expect(page.locator(".viewport-foot")).to_contain_text("click where the person should walk to")
+    click_world(page, 12.0, 5.0)
+    expect(page.locator(".controls")).to_contain_text("Walking person", timeout=10000)
+    person = next(o for o in telemetry(page)["obstacles"] if o["id"].startswith("user-"))
+    assert person["label"] == "person" and person["moving"] is True
+    # Invalid walking route (through a shelf) is rejected with a clear message.
+    click_world(page, 10.0, 6.0)
+    click_world(page, 10.0, 9.0)
+    expect(page.locator(".feedback-error")).to_contain_text("passes through shelf-3", timeout=10000)
+
+
 SHOTS.mkdir(parents=True, exist_ok=True)
 
 
@@ -369,7 +436,7 @@ def test_viewport_zoom_effects_and_obstacle_move(page):
     expect(effects).not_to_be_checked()
     effects.check()
     # Place an obstacle, select it, then move it - all confirmed by the backend.
-    page.get_by_text("Place obstacle", exact=True).click()
+    page.locator(".segmented label", has_text="Place obstacle").click()
     click_world(page, 3.0, 9.0)
     expect(page.locator(".controls")).to_contain_text("Obstacle user-1 placed", timeout=5000)
     click_world(page, 3.0, 9.0)
@@ -379,7 +446,7 @@ def test_viewport_zoom_effects_and_obstacle_move(page):
     ob = next(o for o in telemetry(page)["obstacles"] if o["id"] == "user-1")
     assert abs(ob["y"] - 10.5) < 0.1
     # Invalid target: inside a shelf -> backend rejects, UI says why.
-    page.get_by_text("Set target", exact=True).first.click()
+    page.locator(".segmented label", has_text="Set target").click()
     click_world(page, 5.0, 10.0)
     expect(page.locator(".feedback-error")).to_contain_text("too close to shelf-1", timeout=5000)
 

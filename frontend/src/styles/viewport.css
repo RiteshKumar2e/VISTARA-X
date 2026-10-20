@@ -314,7 +314,110 @@
   }
 }
 
+.legend .sw-lidar {
+  width: 10px;
+  height: 4px;
+  background: linear-gradient(90deg, #7fe3d9 50%, #ff9f5a 50%);
+}
+.legend .sw-prox {
+  width: 10px;
+  border-radius: 50%;
+  border: 2px solid #f0b429;
+}
+
+/* ---------- Sensors & models panels ---------- */
+.hint-top {
+  margin: 0 0 var(--space-3);
+}
+.prox {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: baseline;
+  gap: 2px var(--space-3);
+  padding: var(--space-3);
+  margin-bottom: var(--space-3);
+  border-radius: var(--radius-sm);
+  border-left: 4px solid;
+  background: var(--color-surface-muted);
+  font-size: var(--text-sm);
+}
+.prox .muted {
+  grid-column: 1 / -1;
+}
+.prox-ok {
+  border-color: var(--color-success);
+}
+.prox-ok strong {
+  color: var(--color-success);
+}
+.prox-degraded {
+  border-color: var(--color-warning);
+  background: var(--color-warning-soft);
+}
+.prox-degraded strong {
+  color: var(--color-warning);
+}
+.prox-down {
+  border-color: var(--color-danger);
+  background: var(--color-danger-soft);
+}
+.prox-down strong {
+  color: var(--color-danger);
+}
+.sys-inline {
+  font-weight: 600;
+  font-size: var(--text-xs);
+}
+.sys-inline.sys-ok {
+  color: var(--color-success);
+}
+.sys-inline.sys-degraded {
+  color: var(--color-warning);
+}
+.sys-inline.sys-down {
+  color: var(--color-danger);
+}
+.sys-inline.sys-pending {
+  color: var(--color-text-muted);
+}
+.sensor-table th[scope='row'] {
+  font-weight: 500;
+  text-align: left;
+}
+.sensor-table input[type='checkbox'] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--color-accent);
+}
+.sensor-form,
+.model-form {
+  margin-top: var(--space-3);
+}
+.sensor-form + .sensor-form {
+  border-top: var(--border);
+  padding-top: var(--space-3);
+}
+
+.tool-select {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+.tool-select select {
+  width: auto;
+  min-height: 36px;
+  padding: 0 var(--space-2);
+  font-size: var(--text-sm);
+}
+
 /* Event timeline source marker. */
 .event-local .event-level {
   color: var(--color-text-faint);
+}
+
+.sensor-table td.mono,
+.sensor-table td:nth-child(2) {
+  white-space: nowrap;
 }

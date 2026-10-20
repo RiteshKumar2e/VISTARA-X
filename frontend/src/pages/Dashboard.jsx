@@ -3,7 +3,9 @@ import { Link } from 'react-router-dom';
 import { EventLog } from '../components/EventLog';
 import { GuidedDemo } from '../components/GuidedDemo';
 import { MissionControls } from '../components/MissionControls';
+import { ModelsPanel } from '../components/ModelsPanel';
 import { PerceptionPanel } from '../components/PerceptionPanel';
+import { SensorsPanel } from '../components/SensorsPanel';
 import { SimulationViewport } from '../components/SimulationViewport';
 import { SystemStatus } from '../components/SystemStatus';
 import { TelemetryPanel } from '../components/TelemetryPanel';
@@ -59,6 +61,8 @@ export default function Dashboard() {
   const [selectedObstacle, setSelectedObstacle] = useState(null);
   const [rejected, setRejected] = useState(null);
   const [demoSignal, setDemoSignal] = useState(0);
+  const [objectType, setObjectType] = useState('crate');
+  const [walkStart, setWalkStart] = useState(null); // first click of a walking person's route
   const online = backend.state === 'ok' && connection !== 'closed';
   const localEvents = useConnectionEvents(connection, backend.state);
 
@@ -85,7 +89,8 @@ export default function Dashboard() {
   }, [telemetry, selectedObstacle]);
   useEffect(() => {
     if (clickMode !== 'obstacle') setSelectedObstacle(null);
-  }, [clickMode]);
+    setWalkStart(null);
+  }, [clickMode, objectType]);
 
   const reject = (p) => setRejected({ ...p, at: performance.now() });
 
@@ -105,7 +110,23 @@ export default function Dashboard() {
         else reject(point);
         return;
       }
-      const ok = await command.run('map', () => api.addObstacle(point.x, point.y), (r) => `Obstacle ${r.obstacle.id} placed at ${at}`);
+      if (objectType === 'person-walking') {
+        if (!walkStart) {
+          setWalkStart(point); // wait for the second click: end of the walking route
+          return;
+        }
+        const start = walkStart;
+        setWalkStart(null);
+        const ok = await command.run(
+          'map',
+          () => api.addObstacle(start.x, start.y, { label: 'person', patrol_to: point }),
+          (r) => `Walking person ${r.obstacle.id} added between (${start.x.toFixed(2)}, ${start.y.toFixed(2)}) and ${at}`,
+        );
+        if (!ok) reject(point);
+        return;
+      }
+      const opts = objectType === 'person' ? { label: 'person' } : objectType === 'cone' ? { label: 'cone', shape: 'circle', size: 0.6 } : { label: objectType };
+      const ok = await command.run('map', () => api.addObstacle(point.x, point.y, opts), (r) => `Obstacle ${r.obstacle.id} placed at ${at}`);
       if (!ok) reject(point);
       return;
     }
@@ -152,6 +173,9 @@ export default function Dashboard() {
             world={world}
             clickMode={clickMode}
             setClickMode={setClickMode}
+            objectType={objectType}
+            setObjectType={setObjectType}
+            walkStart={walkStart}
             onMapClick={onMapClick}
             connection={connection}
             online={online}
@@ -161,6 +185,10 @@ export default function Dashboard() {
           <div className="split">
             <TelemetryPanel telemetry={telemetry} connection={connection} />
             <PerceptionPanel telemetry={telemetry} command={command} online={online} />
+          </div>
+          <div className="split">
+            <SensorsPanel telemetry={telemetry} command={command} online={online} />
+            <ModelsPanel telemetry={telemetry} command={command} online={online} />
           </div>
         </div>
         <div className="col-side">
@@ -173,10 +201,16 @@ export default function Dashboard() {
             clickMode={clickMode}
             setClickMode={setClickMode}
             onRestartDemo={() => setDemoSignal((n) => n + 1)}
+            selectedObstacle={selectedObstacle}
+            onRemoveObstacle={async () => {
+              const id = selectedObstacle;
+              const ok = await command.run('remove', () => api.removeObstacle(id), () => `Obstacle ${id} removed`);
+              if (ok) setSelectedObstacle(null);
+            }}
           />
           <GuidedDemo telemetry={telemetry} command={command} online={online} startSignal={demoSignal} />
           <SystemStatus backend={backend} connection={connection} telemetry={telemetry} />
-          <EventLog telemetry={telemetry} localEvents={localEvents} />
+          <EventLog events={telemetry?.events} localEvents={localEvents} />
         </div>
       </div>
       <Toaster telemetry={telemetry} />

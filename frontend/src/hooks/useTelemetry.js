@@ -5,6 +5,9 @@ import { TELEMETRY_VERSION } from '../types/telemetry';
 const STALE_AFTER_MS = 3000;
 const MAX_BACKOFF_MS = 5000;
 const PING_MS = 15000;
+// React state is committed at most this often; the 3D/plan views interpolate between
+// samples, so 5 Hz keeps motion smooth while halving dashboard re-renders.
+const COMMIT_MS = 200;
 
 /**
  * Live telemetry over WebSocket with automatic reconnect (exponential backoff)
@@ -20,6 +23,9 @@ export function useTelemetry() {
   const [versionMismatch, setVersionMismatch] = useState(false);
   const lastSeq = useRef(-1);
   const lastAt = useRef(0);
+  const pending = useRef(null);
+  const commitTimer = useRef(null);
+  const lastCommit = useRef(0);
 
   useEffect(() => {
     let ws;
@@ -54,9 +60,17 @@ export function useTelemetry() {
         setVersionMismatch(msg.version !== TELEMETRY_VERSION);
         lastSeq.current = msg.seq;
         lastAt.current = Date.now();
-        setTelemetry(msg);
-        setLastMessageAt(lastAt.current);
-        setConnection('open');
+        pending.current = msg;
+        const commit = () => {
+          commitTimer.current = null;
+          lastCommit.current = Date.now();
+          setTelemetry(pending.current);
+          setLastMessageAt(lastAt.current);
+          setConnection('open');
+        };
+        const wait = COMMIT_MS - (Date.now() - lastCommit.current);
+        if (wait <= 0) commit();
+        else if (!commitTimer.current) commitTimer.current = setTimeout(commit, wait);
       };
       ws.onclose = () => {
         clearInterval(pingTimer);
@@ -81,6 +95,7 @@ export function useTelemetry() {
       clearTimeout(reconnectTimer);
       clearInterval(staleTimer);
       clearInterval(pingTimer);
+      clearTimeout(commitTimer.current);
       if (ws) {
         ws.onclose = null;
         ws.onerror = null;

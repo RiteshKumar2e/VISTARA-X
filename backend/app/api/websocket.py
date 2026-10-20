@@ -81,7 +81,16 @@ async def telemetry_ws(websocket: WebSocket):
     if queue is None:
         await websocket.close(code=1013)  # try again later
         return
-    await websocket.accept()
+    try:
+        await websocket.accept()
+        await _serve(websocket, hub, queue)
+    except WebSocketDisconnect:
+        pass  # client went away (possibly mid-handshake); nothing to report
+    finally:
+        hub.unregister(queue)  # always release the client slot
+
+
+async def _serve(websocket: WebSocket, hub: TelemetryHub, queue: asyncio.Queue) -> None:
     send_lock = asyncio.Lock()
 
     async def send(text: str) -> None:
@@ -124,4 +133,3 @@ async def telemetry_ws(websocket: WebSocket):
     finally:
         for t in tasks:
             t.cancel()
-        hub.unregister(queue)

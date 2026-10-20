@@ -149,10 +149,10 @@ export const ARCHITECTURE = [
     status: 'simulation',
     purpose: 'Produce what the robot would see: an RGB frame plus per-pixel distance.',
     inputs: 'Robot pose, scene geometry',
-    outputs: 'RGB frame, depth image, segmentation mask (PyBullet) or ray-cast frame and depth',
+    outputs: 'RGB frame, depth image and segmentation mask; LiDAR scan; ultrasonic ranges; IMU and wheel-odometry readings',
     implementation:
-      'PyBullet TinyRenderer camera (70 degree field of view) in headless mode. When PyBullet is not installed, an analytic ray-cast renderer is used and labelled.',
-    modules: ['backend/app/simulation/physics.py', 'backend/app/perception/camera.py'],
+      'All sensors are simulated against the scene geometry with seeded noise: a PyBullet TinyRenderer RGB/depth camera (70 degree field of view), a 2D LiDAR (configurable angle, resolution, range and rate), a six-channel ultrasonic ring, an IMU with gyro bias, and wheel odometry with slip. Each reports health, rate and data age.',
+    modules: ['backend/app/simulation/physics.py', 'backend/app/perception/camera.py', 'backend/app/sensors/'],
     live: 'camera',
   },
   {
@@ -178,8 +178,8 @@ export const ARCHITECTURE = [
     inputs: 'Camera frame',
     outputs: 'Class labels, bounding boxes, confidence scores (YOLOv8) and range from the depth buffer',
     implementation:
-      'Real Ultralytics YOLOv8 inference when local weights are present. The default is a simulated detector that projects ground-truth geometry; it is labelled as such and reports no confidence.',
-    modules: ['backend/app/perception/detectors.py'],
+      'A model registry discovers YOLO weight files and runs a primary model, with an optional secondary model in cascade or multi-model mode. Results are merged with class-aware NMS, tagged with model and frame id, and governed by a latency budget. The default is a simulated detector that projects ground-truth geometry; it is labelled as such and reports no confidence.',
+    modules: ['backend/app/perception/registry.py', 'backend/app/perception/detectors.py'],
     live: 'detector',
   },
   {
@@ -261,7 +261,7 @@ export const ARCHITECTURE = [
     inputs: 'Live grid, current route, environment feedback',
     outputs: 'Replan request, safety stop or Blocked state',
     implementation:
-      'The next 4 m of route is checked against the grid every tick. A blocked route triggers A* again; a safety layer vetoes motion that would close clearance below 5 cm.',
+      'Three layers: the next 4 m of route is checked against the grid every tick (a blocked route triggers A* again); measured LiDAR/ultrasonic clearance in the driving corridor slows the robot and stops it below the stop distance; and a ground-truth layer vetoes motion that would close clearance below 5 cm. With no fresh proximity sensor the robot runs at a fail-safe speed.',
     modules: ['backend/app/simulation/engine.py'],
     live: 'replans',
   },
@@ -324,7 +324,7 @@ export const ARCHITECTURE = [
 
 // Known limitations per stage, shown in the architecture explorer.
 export const STAGE_LIMITS = {
-  '1.1': 'Synthetic render of simple shapes; no real camera, noise model or lens distortion.',
+  '1.1': 'Simulated sensors only: simple rendered shapes, ideal geometry plus seeded noise; no lens distortion, multipath or real hardware.',
   '1.2': 'No denoising or filtering stage; frames are only encoded and resized.',
   '1.3': 'COCO-trained YOLOv8 rarely recognises rendered primitives; the default detector is ground truth, not a model.',
   '1.4': 'Tracks use a simple nearest-neighbour association; no prediction of where moving obstacles go next.',

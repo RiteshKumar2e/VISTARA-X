@@ -11,7 +11,9 @@ from ..schemas.api import (
     ConfigRequest,
     DetectorRequest,
     ErrorResponse,
+    ModelSelectRequest,
     PerceptionConfigRequest,
+    SensorConfigRequest,
     NavigateRequest,
     ObstacleRequest,
     Point,
@@ -209,7 +211,10 @@ def configure(body: ConfigRequest, request: Request):
 
 @router.post("/obstacles", tags=["simulation"], status_code=201, responses=ERRORS)
 def add_obstacle(body: ObstacleRequest, request: Request):
-    return {"ok": True, "obstacle": engine(request).add_obstacle(body.x, body.y, body.shape, body.size, body.label)}
+    return {"ok": True, "obstacle": engine(request).add_obstacle(
+        body.x, body.y, body.shape, body.size, body.label,
+        patrol_to=(body.patrol_to.x, body.patrol_to.y) if body.patrol_to else None,
+    )}
 
 
 @router.post("/obstacles/{obstacle_id}/move", tags=["simulation"], responses=ERRORS)
@@ -218,6 +223,51 @@ def move_obstacle(obstacle_id: str, body: Point, request: Request):
     if len(obstacle_id) > 32:
         raise CommandError("not_found", "No such obstacle", 404)
     return {"ok": True, "obstacle": engine(request).move_obstacle(obstacle_id, body.x, body.y)}
+
+
+@router.post("/simulation/obstacles", tags=["simulation"], status_code=201, responses=ERRORS)
+def add_simulation_obstacle(body: ObstacleRequest, request: Request):
+    """Add an obstacle (same as POST /obstacles)."""
+    return {"ok": True, "obstacle": engine(request).add_obstacle(
+        body.x, body.y, body.shape, body.size, body.label,
+        patrol_to=(body.patrol_to.x, body.patrol_to.y) if body.patrol_to else None,
+    )}
+
+
+@router.delete("/simulation/obstacles/{obstacle_id}", tags=["simulation"], responses=ERRORS)
+def remove_obstacle(obstacle_id: str, request: Request):
+    """Remove one obstacle you added (scenario obstacles are fixed)."""
+    if len(obstacle_id) > 32:
+        raise CommandError("not_found", "No such obstacle", 404)
+    engine(request).remove_obstacle(obstacle_id)
+    return {"ok": True, "removed": obstacle_id}
+
+
+@router.get("/sensors", tags=["sensors"])
+def sensors(request: Request):
+    """Every sensor (all simulated) with health, rate, data age and latest reading."""
+    return engine(request).sensor_status()
+
+
+@router.post("/sensors/configure", tags=["sensors"], responses=ERRORS)
+def configure_sensor(body: SensorConfigRequest, request: Request):
+    return {"ok": True, "sensor": engine(request).configure_sensor(body.sensor, body.enabled, body.rate_hz, body.params)}
+
+
+@router.get("/models", tags=["perception"])
+def models(request: Request):
+    """Detector registry: discovered weights, load state, latency and execution policy."""
+    return engine(request).perception.registry.snapshot()
+
+
+@router.post("/models/select", tags=["perception"], responses=ERRORS)
+def select_models(body: ModelSelectRequest, request: Request):
+    kwargs = body.model_dump(exclude_none=True, exclude={"clear_secondary", "iou"})
+    if body.iou is not None:
+        kwargs["iou_threshold"] = body.iou
+    if body.clear_secondary:
+        kwargs["secondary"] = None
+    return {"ok": True, **engine(request).select_models(**kwargs)}
 
 
 @router.post("/obstacles/inject", tags=["simulation"], status_code=201, responses=ERRORS)

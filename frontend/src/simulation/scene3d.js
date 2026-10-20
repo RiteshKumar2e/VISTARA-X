@@ -606,6 +606,14 @@ export class Sim3D {
     this.robot.add(this.footprint);
 
     this.fov = null;
+    // Simulated LiDAR returns, rebuilt only when a new scan frame arrives.
+    this.lidarPoints = new THREE.Points(
+      new THREE.BufferGeometry(),
+      new THREE.PointsMaterial({ size: 0.07, vertexColors: true, transparent: true, opacity: 0.95, depthWrite: false }),
+    );
+    this.lidarPoints.renderOrder = 6;
+    this.overlayGroup.add(this.lidarPoints);
+    this.lidarFrame = null;
     this.trail = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: '#c4d0d6', transparent: true, opacity: 0.7 }));
     this.overlayGroup.add(this.trail);
     this.inflationGroup = new THREE.Group();
@@ -913,6 +921,31 @@ export class Sim3D {
     }
   }
 
+  _syncLidar(t, visible) {
+    const lidar = t.sensors?.sensors?.find((s) => s.key === 'lidar');
+    const reading = lidar?.enabled ? lidar.reading : null;
+    this.lidarPoints.visible = visible && !!reading;
+    if (!visible || !reading || reading.frame === this.lidarFrame) return;
+    this.lidarFrame = reading.frame;
+    const r = t.robot;
+    const h = lidar.config.mount_height ?? 0.32;
+    const pos = [];
+    const col = [];
+    for (const [bearing, range] of reading.scan) {
+      if (range === null) continue;
+      const a = r.theta + (bearing * Math.PI) / 180;
+      pos.push(r.x + range * Math.cos(a), h, -(r.y + range * Math.sin(a)));
+      const near = range - 0.3 < 0.9; // within the slow-down distance of the robot surface
+      col.push(...(near ? [1, 0.55, 0.25] : [0.5, 0.92, 0.86]));
+    }
+    this.lidarPoints.geometry.dispose();
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    this.lidarPoints.geometry = geo;
+    this.dirty = true;
+  }
+
   /** Apply one frame of interpolated state. */
   update(state, opts, now) {
     const { layers, effects, rejected, selectedObstacle, anim } = opts;
@@ -938,7 +971,12 @@ export class Sim3D {
     this.lastPose = { x: pose.x, y: pose.y, theta: pose.theta };
     this.ledMat.color.set(LED[t.mission.status] || LED.idle);
     this.ledMat.emissive.set(LED[t.mission.status] || LED.idle);
-    this.footprint.material.opacity = t.safety?.warning ? 0.9 : 0;
+    // Footprint ring: red on a ground-truth clearance warning or a sensor stop, amber while slowing.
+    const prox = t.sensors?.proximity?.action;
+    const ringColor = t.safety?.warning || prox === 'stop' ? '#ff5d4f' : prox === 'slow' || prox === 'degraded' ? '#f0b429' : null;
+    this.footprint.material.opacity = ringColor ? 0.9 : 0;
+    if (ringColor) this.footprint.material.color.set(ringColor);
+    this._syncLidar(t, layers.lidar);
 
     if (this.mode === 'follow') {
       const target = new THREE.Vector3(pose.x, 0, -pose.y);

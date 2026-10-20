@@ -20,6 +20,7 @@ from ..control.controller import PurePursuitController, integrate
 from ..navigation.astar import plan
 from ..navigation.grid import OccupancyGrid
 from ..perception.service import PerceptionService
+from ..sensors.suite import SensorSuite
 from .physics import PYBULLET_AVAILABLE, PYBULLET_ERROR, AnalyticCollision, PyBulletCollision
 from .scenarios import DEFAULT_SCENARIO, MAP_H, MAP_W, SCENARIOS
 from .world import ROBOT_RADIUS, Obstacle, World
@@ -57,6 +58,8 @@ class SimulationEngine:
         self.grid_resolution = settings.grid_resolution
         self.perception = perception or PerceptionService(settings, (MAP_W, MAP_H))
         self.physics = self._make_physics(settings)
+        res = settings.grid_resolution
+        self.sensors = SensorSuite((int(math.ceil(MAP_H / res)), int(math.ceil(MAP_W / res))), res)
         self._lock = threading.RLock()
         self._threads: list[threading.Thread] = []
         self._running = threading.Event()
@@ -283,6 +286,7 @@ class SimulationEngine:
             elif self.status == "blocked_waiting":
                 self._step_blocked_waiting()
 
+            self.sensors.step(self.world, self.dt, self.sim_time)
             self._verify_collisions()
             warning = self.clearance < WARNING_CLEARANCE
             if warning and not self.collision_warning:
@@ -387,13 +391,45 @@ class SimulationEngine:
         if speed_factor < 1.0 and not self._slowed:
             self._event("info", "perception", "Person detected ahead; speed reduced by 50%")
         self._slowed = speed_factor < 1.0
+
+        # Measured proximity (simulated LiDAR + ultrasonic) in the driving corridor,
+        # up to the waypoint the robot is heading for.
+        wp = self.path[min(self.waypoint_index, len(self.path) - 1)]
+        corridor = max(math.hypot(wp[0] - r.x, wp[1] - r.y), 0.5)
+        prox = self.sensors.proximity(r, corridor)
+        if prox["action"] != self._prox_action:
+            src = "+".join(prox["sources"])
+            dist = prox["front_clearance"]
+            msg = {
+                "slow": lambda: f"Proximity: {dist:.2f} m ahead ({src}); slowing down",
+                "stop": lambda: f"Proximity stop: {dist:.2f} m ahead ({src})",
+                "degraded": lambda: "No fresh proximity sensor (LiDAR/ultrasonic); fail-safe reduced speed",
+                "clear": lambda: "Proximity clear; normal speed",
+            }[prox["action"]]()
+            level = {"stop": "warning", "degraded": "warning"}.get(prox["action"], "info")
+            if prox["action"] != "clear" or self._prox_action in ("stop", "degraded"):
+                self._event(level, "proximity", msg, sources=prox["sources"])
+            self._prox_action = prox["action"]
+        speed_factor = min(speed_factor, prox["speed_factor"])
+
         self.controller.max_speed = self.params["max_speed"]
         cmd = self.controller.compute(
             r, self.path, max(self.waypoint_index - 1, 0), self.dt,
-            self.params["max_speed"] * speed_factor,
+            self.params["max_speed"] * max(speed_factor, 0.05),
         )
         self.waypoint_index = max(self.waypoint_index, cmd.segment_index)
         v, w = cmd.v, cmd.w
+        if prox["action"] == "stop" and v > 0:
+            # Sensor-triggered stop: no forward motion; turning in place is allowed.
+            v = 0.0
+            self.proximity_stops += 1
+            if self.sim_time - self.last_replan_time >= REPLAN_COOLDOWN * 2:
+                if self._plan("proximity"):
+                    self.replans += 1
+                    self._event("info", "replanned", "Replanned after proximity stop; new route validated against the grid")
+                else:
+                    self._enter_blocked(self.last_plan["reason"])
+                    return
 
         # Safety layer: veto motion that would bring the footprint into contact.
         nx, ny, nth = integrate(r, v, w, self.dt)
@@ -442,6 +478,9 @@ class SimulationEngine:
             self._slowed = False
             self.contacts: list[str] = []
             self._verify_collisions()
+            self.sensors.reset()
+            self._prox_action = "clear"
+            self.proximity_stops = 0
             self.last_plan: dict | None = None
             self.last_plan_ms: float | None = None
             self.last_replan_time = -1e9
@@ -582,11 +621,39 @@ class SimulationEngine:
         if count_limit and self._user_obstacles >= MAX_USER_OBSTACLES:
             raise CommandError("too_many_obstacles", f"At most {MAX_USER_OBSTACLES} added obstacles")
 
+    PERSON_RADIUS = 0.3
+    PERSON_SPEED = 0.45  # m/s walking pace
+
+    def _validate_walk(self, a: tuple, b: tuple) -> None:
+        """A walking person's route must stay clear of static geometry and the map edge."""
+        length = math.dist(a, b)
+        if length < 1.0:
+            raise CommandError("invalid_patrol", "A walking route must be at least 1 m long", 422)
+        r = self.PERSON_RADIUS
+        for i in range(int(length / 0.1) + 1):
+            t = i / max(int(length / 0.1), 1)
+            px, py = a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t
+            if not (r <= px <= self.world.width - r and r <= py <= self.world.height - r):
+                raise CommandError("invalid_patrol", "The walking route leaves the map", 422)
+            for o in self.world.obstacles:
+                if not o.moving and float(o.distance(px, py)) < r + 0.05:
+                    raise CommandError("invalid_patrol", f"The walking route passes through {o.id}", 422)
+
     def add_obstacle(self, x: float, y: float, shape: str = "rect", size: float = 0.8,
-                     label: str = "crate") -> dict:
+                     label: str = "crate", patrol_to: tuple | None = None) -> dict:
         with self._lock:
             idn = f"user-{self._user_obstacles + 1}"
-            if shape == "circle":
+            if label == "person":
+                # People have a fixed human footprint and height regardless of `size`.
+                obs = Obstacle(idn, "person", "circle", x, y, r=self.PERSON_RADIUS, height=1.75, dynamic=True)
+                if patrol_to is not None:
+                    self._validate_walk((x, y), patrol_to)
+                    obs.patrol = [(x, y), tuple(patrol_to)]
+                    obs.speed = self.PERSON_SPEED
+                    obs.patrol_index = 1
+            elif patrol_to is not None:
+                raise CommandError("invalid_patrol", "Only people can walk a route", 422)
+            elif shape == "circle":
                 obs = Obstacle(idn, label, "circle", x, y, r=size / 2, height=1.0, dynamic=True)
             else:
                 obs = Obstacle(idn, label, "rect", x, y, w=size, h=size, height=1.0, dynamic=True)
@@ -594,7 +661,9 @@ class SimulationEngine:
             self.world.obstacles.append(obs)
             self._user_obstacles += 1
             self._grid_dirty = True
-            self._event("warning", "obstacle", f"Obstacle {idn} ({label}) appeared at ({x:.2f}, {y:.2f})")
+            what = "walking person" if obs.moving else ("person" if label == "person" else label)
+            walk = f", walking to ({patrol_to[0]:.2f}, {patrol_to[1]:.2f})" if obs.moving else ""
+            self._event("warning", "obstacle", f"Obstacle {idn} ({what}) appeared at ({x:.2f}, {y:.2f}){walk}")
             return obs.to_dict()
 
     def inject_on_route(self) -> dict:
@@ -653,6 +722,94 @@ class SimulationEngine:
                 self._grid_dirty = True
                 self._event("info", "obstacle", f"Removed {removed} added obstacle(s)")
             return removed
+
+    # Allowed ranges for sensor parameters (validated before they reach the sensors).
+    SENSOR_LIMITS = {
+        "lidar": {"fov_deg": (30, 360), "resolution_deg": (0.25, 10), "max_range": (1, 30), "noise_std": (0, 0.2)},
+        "ultrasonic": {"max_range": (0.2, 5), "cone_deg": (5, 60)},
+        "imu": {},
+        "odometry": {},
+        "safety": {"slow_distance": (0.2, 3), "stop_distance": (0.05, 1.5)},
+    }
+
+    def configure_sensor(self, key: str, enabled=None, rate_hz=None, params=None) -> dict:
+        params = params or {}
+        if key == "camera":
+            if params:
+                raise CommandError("invalid_params", "The camera accepts only enabled and rate_hz", 422)
+            self.configure_perception(enabled=enabled, rate_hz=rate_hz)
+            return self.sensor_status()["camera"]
+        limits = self.SENSOR_LIMITS[key]
+        for name, value in params.items():
+            if name not in limits:
+                raise CommandError("invalid_params", f"Unknown parameter '{name}' for {key}", 422)
+            lo, hi = limits[name]
+            if not lo <= value <= hi:
+                raise CommandError("invalid_params", f"{key}.{name} must be between {lo} and {hi}", 422)
+        with self._lock:
+            if key == "safety":
+                pol = self.sensors.policy
+                slow = params.get("slow_distance", pol.slow_distance)
+                stop = params.get("stop_distance", pol.stop_distance)
+                if stop >= slow:
+                    raise CommandError("invalid_params", "stop_distance must be smaller than slow_distance", 422)
+                pol.slow_distance, pol.stop_distance = slow, stop
+                self._event("info", "sensor", f"Safety thresholds: slow below {slow:.2f} m, stop below {stop:.2f} m")
+                return {"policy": pol.to_dict()}
+            status = self.sensors.configure(key, enabled, rate_hz, params)
+            changes = [f"{k}={v}" for k, v in {"enabled": enabled, "rate_hz": rate_hz, **params}.items() if v is not None]
+            self._event("info", "sensor", f"{status['name']} configured: {', '.join(changes) or 'no change'}")
+            return status
+
+    def sensor_status(self) -> dict:
+        """All sensors, including the camera and depth channel owned by perception."""
+        with self._lock:
+            snap = self.sensors.snapshot(self.sim_time)
+        p = self.perception.snapshot(self.sim_time)
+        cam_health = "disabled" if not p["enabled"] else ("stale" if p["stale"] else ("ok" if p["frame_seq"] else "waiting"))
+        camera = {
+            "key": "camera", "name": "RGB camera (simulated render)", "kind": "image", "simulated": True,
+            "enabled": p["enabled"], "health": cam_health, "rate_hz": p["rate_hz"], "seq": p["frame_seq"],
+            "age_s": None, "error": p["last_error"],
+            "config": {**p["camera"], "renderer": p["renderer"], "resolution": p["frame_size"]},
+            "reading": {"frame": p["frame_seq"], "detections": len(p["detections"]), "processing_ms": p["processing_ms"]},
+        }
+        depth = {
+            "key": "depth", "name": "Depth channel (simulated, from the camera render)", "kind": "depth",
+            "simulated": True, "enabled": p["enabled"], "health": cam_health, "rate_hz": p["rate_hz"],
+            "seq": p["frame_seq"], "age_s": None, "error": None,
+            "config": {"source": "PyBullet depth buffer" if p["renderer"] == "pybullet" else "ray-cast column depth",
+                       "range": p["camera"]["range"]},
+            "reading": {"nearest_m": (p["scene"].get("nearest") or {}).get("distance")},
+        }
+        snap["sensors"] = [camera, depth, *snap["sensors"]]
+        snap["camera"] = camera
+        return snap
+
+    def remove_obstacle(self, obstacle_id: str) -> None:
+        with self._lock:
+            obs = next((o for o in self.world.obstacles if o.id == obstacle_id), None)
+            if obs is None:
+                raise CommandError("not_found", f"No obstacle '{obstacle_id}'", 404)
+            if not obstacle_id.startswith("user-"):
+                raise CommandError("not_movable", "Only obstacles you added can be removed")
+            self.world.obstacles.remove(obs)
+            self._grid_dirty = True
+            self._event("info", "obstacle", f"Obstacle {obstacle_id} removed")
+
+    def select_models(self, **kwargs) -> dict:
+        try:
+            self.perception.select_models(**kwargs)
+        except ValueError as exc:
+            raise CommandError("invalid_model", str(exc), 422) from exc
+        except RuntimeError as exc:
+            raise CommandError("model_unavailable", str(exc), 409) from exc
+        snap = self.perception.registry.snapshot()
+        pol = snap["policy"]
+        with self._lock:
+            sec = f", secondary {pol['secondary']}" if pol["secondary"] else ""
+            self._event("info", "perception", f"Models: primary {pol['primary']}{sec}, policy {pol['mode']}")
+        return snap
 
     def configure_perception(self, enabled=None, rate_hz=None, confidence=None) -> None:
         self.perception.configure(enabled, rate_hz, confidence)
@@ -743,6 +900,7 @@ class SimulationEngine:
                 "params": dict(self.params),
                 "events": list(self.events)[-60:],
                 "perception": self.perception.snapshot(self.sim_time),
+                "sensors": {**self.sensors.snapshot(self.sim_time), "proximity_stops": self.proximity_stops},
             }
 
     def map_data(self) -> dict:
@@ -761,6 +919,9 @@ class SimulationEngine:
                 }
             if self.target:
                 grid["target_cell"] = list(self.grid.world_to_cell(*self.target))
+            # Cells with a simulated LiDAR return in the last 2 s (sensor-derived observation).
+            lidar = self.sensors.lidar_occupied(self.sim_time)
+            grid["lidar_occupied"] = ["".join("1" if v else "0" for v in row) for row in lidar]
             return {
                 "width": self.world.width,
                 "height": self.world.height,

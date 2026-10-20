@@ -69,5 +69,10 @@ export const api = {
   clearObstacles: () => request('delete', '/obstacles'),
   setDetector: (mode) => request('post', '/perception/mode', { mode }),
   configurePerception: (params) => request('post', '/perception/config', params),
+  sensors: () => request('get', '/sensors'),
+  configureSensor: (sensor, body) => request('post', '/sensors/configure', { sensor, ...body }),
+  models: () => request('get', '/models'),
+  selectModels: (body) => request('post', '/models/select', body),
+  removeObstacle: (id) => request('delete', `/simulation/obstacles/${encodeURIComponent(id)}`),
   frameUrl: (seq) => `${API_BASE_URL}/perception/frame?f=${seq}`,
 };

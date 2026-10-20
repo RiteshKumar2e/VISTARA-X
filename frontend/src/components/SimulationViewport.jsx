@@ -9,6 +9,7 @@ const LAYERS = [
   ['route', 'Route'],
   ['inflation', 'Safety zones'],
   ['sensor', 'Camera overlay'],
+  ['lidar', 'LiDAR scan'],
   ['trail', 'Trail'],
   ['explored', 'Unobserved cells', 'plan'],
 ];
@@ -63,6 +64,9 @@ export function SimulationViewport({
   online,
   rejected,
   selectedObstacle,
+  objectType,
+  setObjectType,
+  walkStart,
 }) {
   const viewRef = useRef(null);
   const [view, setView] = useState(() => readStored('vistara.view', '3d'));
@@ -70,7 +74,7 @@ export function SimulationViewport({
   const [webglFailed, setWebglFailed] = useState(false);
   const [hover, setHover] = useState(null);
   const [effects, setEffects] = useState(() => !prefersReducedMotion());
-  const [layers, setLayers] = useState({ route: true, inflation: true, sensor: true, trail: true, explored: false });
+  const [layers, setLayers] = useState({ route: true, inflation: true, sensor: true, lidar: true, trail: true, explored: false });
   const activeView = webglFailed ? 'plan' : view;
 
   useEffect(() => store('vistara.view', view), [view]);
@@ -165,6 +169,19 @@ export function SimulationViewport({
             ['obstacle', 'Add obstacle', ObstacleIcon],
           ]}
         />
+        {clickMode === 'obstacle' && (
+          <div className="tool-select">
+            <label htmlFor="object-type">Object</label>
+            <select id="object-type" value={objectType} onChange={(e) => setObjectType(e.target.value)}>
+              <option value="crate">Crate</option>
+              <option value="barrier">Barrier</option>
+              <option value="pallet">Pallet</option>
+              <option value="cone">Cone</option>
+              <option value="person">Person (standing)</option>
+              <option value="person-walking">Person (walking)</option>
+            </select>
+          </div>
+        )}
       </div>
 
       <div className="toolbar toolbar-sub" role="group" aria-label="Overlays">
@@ -240,7 +257,11 @@ export function SimulationViewport({
           {clickMode === 'obstacle'
             ? selectedObstacle
               ? `Click a free spot to move ${selectedObstacle}, or click it again to deselect.`
-              : 'Click empty floor to add an obstacle, or click an obstacle you added to select and move it.'
+              : objectType === 'person-walking'
+                ? walkStart
+                  ? `Route starts at (${walkStart.x.toFixed(1)}, ${walkStart.y.toFixed(1)}): click where the person should walk to (at least 1 m away, clear of shelves).`
+                  : 'Click where the walking person starts, then click where they walk to. They walk back and forth and give way to the robot.'
+                : 'Click empty floor to add the selected object, or click an obstacle you added to select, move or remove it.'
             : 'Click or tap the floor to select the destination.'}{' '}
           {activeView === '3d'
             ? 'Drag to orbit, right-drag or two fingers to pan, Ctrl + wheel or pinch to zoom.'
@@ -266,6 +287,8 @@ export function SimulationViewport({
           <li><span className="sw sw-inflation" aria-hidden="true" />Planner safety zone (radius + margin)</li>
           <li><span className="sw sw-fov" aria-hidden="true" />Camera field of view (simulated camera, {p?.camera ? `${p.camera.fov_deg}°, ${p.camera.range} m` : '70°'})</li>
           <li><span className="sw sw-detect" aria-hidden="true" />In view of the simulated detector</li>
+          <li><span className="sw sw-lidar" aria-hidden="true" />Simulated LiDAR returns (orange: within slow-down distance)</li>
+          <li><span className="sw sw-prox" aria-hidden="true" />Robot ring: amber slowing, red stopped</li>
           <li><span className="sw sw-track" aria-hidden="true">&times;</span>Camera-derived track</li>
         </ul>
       </div>

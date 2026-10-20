@@ -199,6 +199,7 @@ export function PerceptionPanel({ telemetry, command, online }) {
                 <th scope="col">Confidence</th>
                 <th scope="col">Range</th>
                 <th scope="col">Bearing</th>
+                <th scope="col">Model</th>
               </tr>
             </thead>
             <tbody>
@@ -211,6 +212,11 @@ export function PerceptionPanel({ telemetry, command, online }) {
                   <td className="mono">{d.confidence !== null ? d.confidence.toFixed(2) : 'n/a (ground truth)'}</td>
                   <td className="mono">{d.distance !== null ? `${d.distance.toFixed(1)} m` : '—'}</td>
                   <td className="mono">{d.bearing_deg.toFixed(0)}&deg;</td>
+                  <td className="small">
+                    {d.models ? d.models.join(' + ') : d.model}
+                    {d.agreement ? ' (agree)' : ''}
+                    {d.frame_id ? <span className="muted"> #{d.frame_id}</span> : null}
+                  </td>
                 </tr>
               ))}
             </tbody>

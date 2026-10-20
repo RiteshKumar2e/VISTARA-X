@@ -44,7 +44,9 @@ class ObstacleRequest(StrictModel):
     y: float = Field(..., ge=0, le=12)
     shape: Literal["rect", "circle"] = "rect"
     size: float = Field(0.8, ge=0.3, le=2.0)
-    label: Literal["crate", "barrier", "pallet", "cone"] = "crate"
+    label: Literal["crate", "barrier", "pallet", "cone", "person"] = "crate"
+    # Person only: walk back and forth between (x, y) and this point at walking pace.
+    patrol_to: Optional[Point] = None
 
 
 class DetectorRequest(StrictModel):
@@ -55,6 +57,28 @@ class PerceptionConfigRequest(StrictModel):
     enabled: Optional[bool] = None
     rate_hz: Optional[float] = Field(None, ge=0.5, le=15)
     confidence: Optional[float] = Field(None, ge=0.05, le=0.95)
+
+
+SensorKey = Literal["lidar", "ultrasonic", "imu", "odometry", "camera", "safety"]
+
+
+class SensorConfigRequest(StrictModel):
+    sensor: SensorKey
+    enabled: Optional[bool] = None
+    rate_hz: Optional[float] = Field(None, ge=0.5, le=50)
+    params: Optional[dict[str, float]] = None
+
+
+class ModelSelectRequest(StrictModel):
+    primary: Optional[str] = Field(None, min_length=1, max_length=64)
+    secondary: Optional[str] = Field(None, max_length=64)
+    clear_secondary: bool = False
+    mode: Optional[Literal["single", "cascade", "multi"]] = None
+    confidence: Optional[float] = Field(None, ge=0.05, le=0.95)
+    iou: Optional[float] = Field(None, ge=0.1, le=0.95)
+    latency_budget_ms: Optional[float] = Field(None, ge=20, le=5000)
+    trigger_classes: Optional[list[str]] = Field(None, max_length=20)
+    multi_every: Optional[int] = Field(None, ge=1, le=30)
 
 
 class ErrorBody(BaseModel):

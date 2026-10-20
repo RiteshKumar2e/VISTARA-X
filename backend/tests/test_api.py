@@ -168,3 +168,38 @@ def test_telemetry_is_versioned_and_serialisable(client):
         assert key in snap["mission"]
     assert "tracks" in snap["perception"] and "explored" in snap["perception"]
     assert snap["perception"]["camera"] == {"fov_deg": 70.0, "height": 0.5, "range": 12.0, "forward_offset": 0.32}
+
+
+def test_sensor_endpoints(client):
+    time.sleep(0.5)
+    data = client.get("/sensors").json()
+    keys = {s["key"] for s in data["sensors"]}
+    assert {"camera", "depth", "lidar", "ultrasonic", "imu", "odometry"} <= keys
+    assert all(s["simulated"] for s in data["sensors"])
+    assert data["proximity"]["action"] in ("clear", "slow", "stop", "degraded")
+    r = client.post("/sensors/configure", json={"sensor": "lidar", "rate_hz": 5, "params": {"fov_deg": 180}})
+    assert r.status_code == 200 and r.json()["sensor"]["config"]["fov_deg"] == 180
+    assert client.post("/sensors/configure", json={"sensor": "lidar", "params": {"fov_deg": 5}}).status_code == 422
+    assert client.post("/sensors/configure", json={"sensor": "sonar"}).status_code == 422
+    r = client.post("/sensors/configure", json={"sensor": "ultrasonic", "enabled": False})
+    assert r.json()["sensor"]["health"] == "disabled"
+    assert "sensors" in client.get("/telemetry").json()
+
+
+def test_model_endpoints(client):
+    m = client.get("/models").json()
+    assert m["models"][0]["key"] == "simulated"
+    assert m["policy"]["mode"] in ("single", "cascade", "multi")
+    assert client.post("/models/select", json={"primary": "nope"}).status_code == 422
+    assert client.post("/models/select", json={"mode": "everything"}).status_code == 422
+    r = client.post("/models/select", json={"primary": "simulated", "confidence": 0.4, "iou": 0.6})
+    assert r.status_code == 200 and r.json()["policy"]["confidence"] == 0.4 and r.json()["policy"]["iou"] == 0.6
+
+
+def test_simulation_obstacles_add_and_remove(client):
+    r = client.post("/simulation/obstacles", json={"x": 3, "y": 9})
+    assert r.status_code == 201
+    oid = r.json()["obstacle"]["id"]
+    assert client.delete(f"/simulation/obstacles/{oid}").json() == {"ok": True, "removed": oid}
+    assert client.delete(f"/simulation/obstacles/{oid}").status_code == 404
+    assert client.delete("/simulation/obstacles/shelf-1").status_code == 409

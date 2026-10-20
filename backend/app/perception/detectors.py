@@ -131,13 +131,25 @@ class YoloDetector:
             self._model = YOLO(self.weights)
             log.info("Loaded YOLOv8 weights from %s", self.weights)
 
-    def detect(self, frame: CameraFrame) -> list[dict]:
+    def info(self) -> dict:
+        if self._model is None:
+            return {}
+        return {"task": getattr(self._model, "task", None), "classes": len(getattr(self._model, "names", {}) or {})}
+
+    def detect(self, frame: CameraFrame, conf: float | None = None, iou: float | None = None) -> list[dict]:
         self.load()
         results = self._model.predict(
-            frame.image, imgsz=320, conf=self.confidence, verbose=False, device="cpu"
+            frame.image,
+            imgsz=320,
+            conf=self.confidence if conf is None else conf,
+            iou=0.7 if iou is None else iou,
+            verbose=False,
+            device="cpu",
         )
         detections = []
         names = results[0].names
+        if getattr(self._model, "task", "detect") != "detect" or results[0].boxes is None:
+            raise ValueError(f"model task '{getattr(self._model, 'task', '?')}' is not object detection")
         for box in results[0].boxes:
             x1, y1, x2, y2 = (float(v) for v in box.xyxy[0].tolist())
             c0, c1 = max(int(x1), 0), min(int(x2), len(frame.depth) - 1)

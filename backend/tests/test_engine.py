@@ -221,3 +221,25 @@ def test_planning_event_logged(engine):
     engine.step()
     types = [e["type"] for e in engine.events]
     assert types.index("planning") < types.index("route_planned")
+
+
+def test_add_standing_and_walking_person(engine):
+    standing = engine.add_obstacle(3.0, 9.0, label="person")
+    assert standing["label"] == "person" and standing["r"] == 0.3 and standing["height"] == 1.75
+    assert standing["moving"] is False
+    walker = engine.add_obstacle(12.0, 6.0, label="person", patrol_to=(12.0, 5.0))
+    assert walker["moving"] is True
+    start = next(o for o in engine.world.obstacles if o.id == walker["id"])
+    y0 = start.y
+    engine.set_target(18.5, 6.0)
+    engine.navigate()
+    for _ in range(40):  # people move only while a mission is active
+        engine.step()
+    assert start.y != y0
+    with pytest.raises(CommandError) as err:
+        engine.add_obstacle(10.0, 6.0, label="person", patrol_to=(10.0, 9.0))  # through shelf-3
+    assert err.value.code == "invalid_patrol"
+    with pytest.raises(CommandError):
+        engine.add_obstacle(3.0, 9.0, label="crate", patrol_to=(3.0, 11.0))
+    assert run_until(engine, {"goal_reached", "blocked"}, max_seconds=180)
+    assert engine.collisions == 0
