@@ -178,6 +178,19 @@ export class SceneAnimator {
     }
   }
 
+  /** True while something on screen is still changing between telemetry samples. */
+  animating(now) {
+    const sampleAge = now - this.currAt;
+    const moving = this.curr && (Math.abs(this.curr.robot.v) > 1e-3 || Math.abs(this.curr.robot.w) > 1e-3 || this.curr.obstacles.some((o) => o.moving));
+    return (
+      (moving && sampleAge < 400) ||
+      now - this.revealStart < REVEAL_MS ||
+      (this.ghost && now - this.ghostStart < GHOST_MS) ||
+      [...this.highlights.values()].some((t) => now - t < HIGHLIGHT_MS) ||
+      [...this.seenObstacles.values()].some((t) => t && now - t < APPEAR_MS)
+    );
+  }
+
   /** Interpolated display state for the current frame. */
   frame(now, smooth) {
     const t = this.curr;
@@ -454,16 +467,15 @@ export function drawScene(ctx, view, world, state, opts) {
     }
 
     if (layers.trail && anim.trail.length > 1) {
+      // One path for the whole trail: a single stroke is far cheaper than per-segment fades.
       ctx.lineCap = 'round';
-      for (let i = 1; i < anim.trail.length; i += 1) {
-        ctx.strokeStyle = pal.trail;
-        ctx.globalAlpha = 0.15 + 0.85 * (i / anim.trail.length);
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(X(anim.trail[i - 1][0]), Y(anim.trail[i - 1][1]));
-        ctx.lineTo(X(anim.trail[i][0]), Y(anim.trail[i][1]));
-        ctx.stroke();
-      }
+      ctx.lineJoin = 'round';
+      ctx.strokeStyle = pal.trail;
+      ctx.globalAlpha = 0.7;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      anim.trail.forEach(([x, y], i) => (i ? ctx.lineTo(X(x), Y(y)) : ctx.moveTo(X(x), Y(y))));
+      ctx.stroke();
       ctx.globalAlpha = 1;
     }
 

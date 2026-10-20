@@ -74,7 +74,7 @@ const Viewport3D = forwardRef(function Viewport3D(
         // controls.update() reports camera movement (including damping); render on demand
         // when effects are off, every frame when they are on.
         const moved = sim.controls.update();
-        if (opts.effects || sim.dirty || moved) sim.render();
+        if ((opts.effects && anim.animating(now)) || sim.dirty || moved) sim.render();
       } catch (err) {
         console.error('3D render failed', err);
       }

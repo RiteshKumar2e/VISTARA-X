@@ -79,6 +79,8 @@ export const PlanView2D = forwardRef(function PlanView2D(
 
   useEffect(() => {
     let raf;
+    let last = 0;
+    const FRAME_MS = 1000 / 30; // 30 fps cap
     const loop = () => {
       raf = requestAnimationFrame(loop);
       const canvas = canvasRef.current;
@@ -86,8 +88,12 @@ export const PlanView2D = forwardRef(function PlanView2D(
       const opts = optsRef.current;
       if (!canvas || !view || !opts.pal) return;
       const now = performance.now();
+      if (now - last < FRAME_MS) return;
       const fading = opts.rejected && now - opts.rejected.at < 1800;
-      if (!opts.effects && !dirtyRef.current && !fading) return;
+      // Redraw only when something changed or is still animating; an idle map costs nothing.
+      const animating = opts.effects && animRef.current.animating(now);
+      if (!dirtyRef.current && !fading && !animating) return;
+      last = now;
       dirtyRef.current = false;
       try {
         const anim = animRef.current;
