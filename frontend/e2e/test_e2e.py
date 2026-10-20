@@ -510,3 +510,17 @@ def test_system_status_and_restart_demo(page):
     expect(page.locator(".viewport [data-status]")).to_contain_text("Navigating", timeout=20000)
     page.get_by_role("button", name="Pause walkthrough").click()
     page.screenshot(path=str(SHOTS / "viewport-demo-running.png"))
+
+
+def test_demo_mode_lowers_speed_and_restores_it(page):
+    open_console(page)
+    before = telemetry(page)["params"]["max_speed"]
+    toggle = page.locator(".overview-strip").get_by_label("Demo mode")
+    toggle.check()
+    wait_backend(page, lambda t: abs(t["params"]["max_speed"] - min(0.6, before)) < 1e-6, timeout=10)
+    # The preference survives a reload; the 3D quality setting is local to the browser.
+    page.reload()
+    expect(page.locator(".overview-strip").get_by_label("Demo mode")).to_be_checked()
+    page.locator(".overview-strip").get_by_label("Demo mode").uncheck()
+    wait_backend(page, lambda t: abs(t["params"]["max_speed"] - before) < 1e-6, timeout=10)
+    assert not page.errors, page.errors

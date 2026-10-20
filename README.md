@@ -195,11 +195,11 @@ The registry discovers every `*.pt` file in `backend/models/` (plus `VISTARA_YOL
 
 Results are merged with class-aware NMS; when two models agree the result lists both, but confidence is not increased. If the average frame time exceeds the budget, the secondary model is suspended first, then frames are skipped (stride up to 4). A model that fails to load or infer is marked unavailable and perception falls back to the labelled simulated detector; navigation safety never depends on the detector.
 
-Only `yolov8n.pt` (COCO) was available while building this prototype, so cascade and multi modes were verified with test doubles, not with two real models.
+Weights added to `backend/models/` while the backend is running are picked up the next time `GET /models` is called; no restart is needed. With `yolov8n.pt` and `yolov8s.pt` both present, `test_two_real_models_run_in_multi_mode` runs both real models on a rendered simulator frame (it is skipped when either file or `ultralytics` is missing). Policy logic such as cascade triggers, failures and latency adaptation is also covered with test doubles.
 
 ## Perception and model weights
 
-Model weights are not downloaded automatically and are excluded from version control. To enable YOLOv8 inference, place `yolov8n.pt` in `backend/models/` (see [backend/models/README.md](backend/models/README.md)) and select **YOLOv8 inference** in the dashboard's Perception panel.
+Model weights are not downloaded automatically and are excluded from version control. To enable YOLOv8 inference, place `yolov8n.pt` (and optionally `yolov8s.pt` as a secondary model) in `backend/models/` (see [backend/models/README.md](backend/models/README.md)) and select **YOLOv8 inference** in the dashboard's Perception panel.
 
 Without weights, the system uses a simulated detector that projects ground-truth geometry into the camera. It is clearly labelled in the interface and reports no confidence scores. The camera image is a synthetic render, so a COCO-trained YOLOv8 model may detect few or no objects; its output is displayed unmodified.
 
@@ -238,11 +238,11 @@ The end-to-end suite accepts `E2E_BACKEND_URL` and `E2E_FRONTEND_URL` to target 
 | WebSocket closes immediately | The frontend origin is missing from `VISTARA_CORS_ORIGINS`. |
 | PyBullet fails to install on Windows | Install the *Desktop development with C++* build tools, or continue without it; the analytic fallback is used and reported. |
 | YOLOv8 option is disabled | Weights are missing or `ultralytics` is not installed. |
-| Robot moves slowly or telemetry shows *Delayed* on a low-power laptop | The browser is competing with the simulation for CPU. Untick **Motion effects** or use the **Plan** view; close other heavy tabs. The backend raises itself to above-normal priority on Windows (`VISTARA_HIGH_PRIORITY`). |
+| Robot moves slowly or telemetry shows *Delayed* on a low-power laptop | The browser is competing with the simulation for CPU. Tick **Demo mode** in the mission overview (20 fps 3D without shadows, robot speed 0.6 m/s; unticking restores the previous speed), untick **Motion effects** or use the **Plan** view; close other heavy tabs. The backend raises itself to above-normal priority on Windows (`VISTARA_HIGH_PRIORITY`). |
 
 ## Judge demonstration guide
 
-No code edits are needed. Start both applications (see *Getting started*) and open `http://localhost:5173/mission`.
+No code edits are needed. Start both applications (see *Getting started*) and open `http://localhost:5173/mission`. On a slower laptop, or when presenting, tick **Demo mode** in the mission overview first.
 
 | # | Action | What to verify |
 |---|---|---|
@@ -258,7 +258,7 @@ No code edits are needed. Start both applications (see *Getting started*) and op
 | 10 | Verify the honest failure. | Status *Blocked* with *No collision-free route to the target exists*; the robot does not move (distance travelled 0.00 m). |
 | 11 | Click **Reset** and repeat. | Same start pose and deterministic scenario every time. |
 
-Optional: add a *Person (walking)* across the route, switch the LiDAR off to see the fail-safe speed, or select *YOLOv8* in Detection models to run real inference on the camera frame. **Run guided demo** automates steps 1–8.
+Optional: add a *Person (walking)* across the route, switch the LiDAR off to see the fail-safe speed, or select *YOLOv8* in Detection models to run real inference on the camera frame (with `yolov8s.pt` present, choose it as the secondary model and set the policy to *cascade* or *multi*). **Run guided demo** automates steps 1–8.
 
 ### Mission states
 
@@ -270,7 +270,7 @@ Optional: add a *Person (walking)* across the route, switch the LiDAR off to see
 |---|---|
 | **Implemented** | A\* planning on an inflated occupancy grid, route validation, replanning state machine, pure-pursuit control, three-layer safety (grid route check, measured proximity, ground-truth veto), mission states, REST + WebSocket API, 3D/2D visualisation, model registry and fusion, guided and blocked demos, automated tests |
 | **Simulated** | All sensors (camera, depth, LiDAR, ultrasonic, IMU, odometry), robot motion (kinematic), people and obstacles, PyBullet collision checks and rendering |
-| **Unavailable here** | A second set of YOLO weights (cascade/multi policies tested with doubles); real hardware; GPU inference |
+| **Unavailable here** | Real hardware; GPU inference |
 | **Future** | Real RGB-D camera and motor-controller integration, LiDAR hardware and sensor fusion, perception-built maps (SLAM), vision-language objectives, multi-robot coordination |
 
 ## Limitations and roadmap
@@ -284,7 +284,7 @@ Optional: add a *Person (walking)* across the route, switch the LiDAR off to see
 - Moving obstacles are avoided at their current position; their motion is not predicted.
 - No accuracy, latency or success-rate benchmarks have been measured.
 - All sensors are simulated against the simulator's geometry; no physical sensor is connected.
-- Only one set of YOLO weights (`yolov8n.pt`, COCO) was available, so cascade and multi-model policies are verified with test doubles; COCO classes rarely appear in the rendered scene.
+- The YOLO weights (`yolov8n.pt`, `yolov8s.pt`) are COCO-trained; COCO classes rarely appear in the rendered scene, so real models often report few or no detections. Inference runs on the CPU only.
 - Automated browser tests run headless with software WebGL and reduced motion; full-motion 3D was checked visually in screenshots.
 
 **Roadmap**

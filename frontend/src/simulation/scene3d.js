@@ -999,11 +999,16 @@ export class Sim3D {
     this._syncHighlights(obstacles, anim, now, selectedObstacle);
 
     // Trail of recent positions.
+    // Keyed on the newest point: the length alone stops changing once the trail is capped,
+    // and a reset must clear the old trail even if the robot never moves again.
     this.trail.visible = layers.trail;
-    if (layers.trail && anim.trail.length > 1 && this.trailCount !== anim.trail.length) {
-      this.trailCount = anim.trail.length;
+    const newest = anim.trail[anim.trail.length - 1] ?? null;
+    if (layers.trail && newest !== this.trailNewest) {
+      this.trailNewest = newest;
       this.trail.geometry.dispose();
-      this.trail.geometry = new THREE.BufferGeometry().setFromPoints(anim.trail.map(([x, y]) => S(x, y, 0.01)));
+      const pts = anim.trail.length > 1 ? anim.trail.map(([x, y]) => S(x, y, 0.01)) : [];
+      this.trail.geometry = new THREE.BufferGeometry().setFromPoints(pts);
+      this.dirty = true;
     }
 
     // Rejected target marker.

@@ -753,7 +753,9 @@ class SimulationEngine:
     def inject_on_route(self) -> dict:
         """Demo helper: drop a barrier across the current route a few metres ahead."""
         with self._lock:
-            if self.status != "navigating" or len(self.path) < 2:
+            # Also accepted during a replanning pause (e.g. a person just crossed the route):
+            # the pending replan then plans around the new barrier too.
+            if self.status not in ("navigating", "replanning") or len(self.path) < 2:
                 raise CommandError("no_active_route", "Start a mission first; there is no route to block")
             r = self.world.robot
             pts = [(r.x, r.y)] + self.path[self.waypoint_index :]
@@ -787,6 +789,9 @@ class SimulationEngine:
                     continue
                 self._user_obstacles += 1
                 self._grid_dirty = True
+                if self.status == "replanning":
+                    prior = self._replan["obstacle"]
+                    self._replan["obstacle"] = f"{prior} and {idn}" if prior else idn
                 self._event(
                     "warning",
                     "obstacle",

@@ -268,7 +268,7 @@ export function MissionControls({
             name="inject"
             pending={pending}
             icon={ObstacleIcon}
-            disabled={disabled || status !== 'navigating' || !!pending}
+            disabled={disabled || !(status === 'navigating' || status === 'replanning') || !!pending}
             onClick={() => run('inject', api.injectObstacle, (r) => `Obstacle ${r.obstacle.id} placed on the route`)}
           >
             Drop obstacle on route

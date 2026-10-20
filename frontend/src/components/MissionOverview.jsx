@@ -81,12 +81,16 @@ export function MissionOverview({ telemetry, backend, connection, command, onlin
           >
             Halt
           </CommandButton>
-          <label className="check ov-demo">
-            <input type="checkbox" checked={!!demoMode} disabled={!!pending} onChange={(e) => onDemoMode(e.target.checked)} />
-            <Term tip="For slower laptops and live presentations: the 3D view renders at 20 fps without shadows at a pixel ratio of 1, and the robot's maximum speed is set to 0.6 m/s. Turning it off restores the previous speed.">
+          <span className="ov-demo">
+            <label className="check">
+              <input type="checkbox" checked={!!demoMode} disabled={!!pending} onChange={(e) => onDemoMode(e.target.checked)} />
               Demo mode
+            </label>
+            <Term tip="For slower laptops and live presentations: the 3D view renders at 20 fps without shadows at a pixel ratio of 1, and the robot's maximum speed is set to 0.6 m/s. Turning it off restores the previous speed.">
+              <span aria-hidden="true">?</span>
+              <span className="sr-only">About demo mode</span>
             </Term>
-          </label>
+          </span>
         </div>
       </div>
       <ul className="ov-health-list" aria-label="System health summary">

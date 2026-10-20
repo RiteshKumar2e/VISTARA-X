@@ -431,6 +431,9 @@
   min-width: 0;
 }
 .ov-demo {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
   margin-left: var(--space-2);
   padding-left: var(--space-3);
   border-left: var(--border);

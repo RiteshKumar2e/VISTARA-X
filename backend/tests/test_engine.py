@@ -169,6 +169,22 @@ def test_reset_restores_scenario(engine):
         engine.reset("nope")
 
 
+def test_obstacle_can_be_dropped_during_a_replanning_pause(engine):
+    engine.params["moving_obstacles"] = False
+    engine.set_target(18.5, 6.0)
+    engine.navigate()
+    run_until(engine, {"navigating"})
+    drive(engine, 2.0)
+    first = engine.inject_on_route()
+    engine.step()
+    assert engine.status == "replanning"
+    second = engine.inject_on_route()  # a second click while the robot is holding still
+    assert run_until(engine, {"navigating"}, max_seconds=2)
+    entry = engine.replan_history[-1]
+    assert entry["outcome"] == "replanned" and entry["validated"] is True
+    assert entry["obstacle"] == f"{first['id']} and {second['id']}"
+
+
 def test_obstacle_validation(engine):
     with pytest.raises(CommandError) as err:
         engine.add_obstacle(1.6, 6.0)
