@@ -6,6 +6,7 @@ Run with:  uvicorn app.main:app --reload --port 8000   (from the backend/ folder
 from __future__ import annotations
 
 import logging
+import os
 import time
 from collections import defaultdict, deque
 from contextlib import asynccontextmanager
@@ -37,6 +38,29 @@ def _error(status: int, code: str, message: str, details=None) -> JSONResponse:
     return JSONResponse(body, status_code=status)
 
 
+def _raise_process_priority() -> None:
+    """Give the fixed-timestep control loop CPU priority over browsers and editors on
+    the same machine (Windows only; opt out with VISTARA_HIGH_PRIORITY=0)."""
+    if os.name != "nt" or os.getenv("VISTARA_HIGH_PRIORITY", "1") == "0":
+        return
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        ABOVE_NORMAL_PRIORITY_CLASS = 0x8000
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        # Declare types: the process pseudo-handle is pointer-sized and must not be truncated.
+        kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+        kernel32.SetPriorityClass.argtypes = (wintypes.HANDLE, wintypes.DWORD)
+        kernel32.SetPriorityClass.restype = wintypes.BOOL
+        if kernel32.SetPriorityClass(kernel32.GetCurrentProcess(), ABOVE_NORMAL_PRIORITY_CLASS):
+            log.info("Backend process priority raised to above-normal")
+        else:
+            log.warning("Could not raise process priority (Windows error %s)", ctypes.get_last_error())
+    except Exception as exc:  # pragma: no cover - platform specific
+        log.warning("Could not raise process priority: %s", exc)
+
+
 def create_app(cfg: Settings = default_settings, start_engine: bool = True) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -44,6 +68,7 @@ def create_app(cfg: Settings = default_settings, start_engine: bool = True) -> F
         app.state.engine = engine
         app.state.hub = websocket.TelemetryHub(engine, cfg.telemetry_hz, cfg.max_ws_clients)
         if start_engine:
+            _raise_process_priority()
             engine.start()
         app.state.hub.start()
         log.info(

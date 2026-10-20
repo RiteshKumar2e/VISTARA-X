@@ -8,6 +8,7 @@ Screenshots are written to E2E_SCREENSHOT_DIR (default: frontend/e2e/screenshots
 """
 
 import os
+import re
 import time
 from pathlib import Path
 
@@ -38,7 +39,9 @@ def browser():
 
 @pytest.fixture
 def page(browser):
-    ctx = browser.new_context(viewport={"width": 1440, "height": 1000})
+    # Reduced motion: keeps headless software rendering light and exercises the
+    # prefers-reduced-motion path. The 3D test below runs with full motion.
+    ctx = browser.new_context(viewport={"width": 1440, "height": 1000}, reduced_motion="reduce")
     # Coordinate-exact tests use the 2D plan view; the 3D view has its own test below.
     ctx.add_init_script("try { localStorage.setItem('vistara.view', 'plan') } catch (e) {}")
     pg = ctx.new_page()
@@ -274,8 +277,10 @@ def test_mobile_menu_and_touch_target(browser):
 def test_backend_unreachable_state(browser):
     ctx = browser.new_context(viewport={"width": 1024, "height": 900})
     page = ctx.new_page()
-    page.route(f"{BACKEND}/**", lambda route: route.abort())
-    page.route_web_socket(f"{BACKEND.replace('http', 'ws')}/ws/telemetry", lambda ws: ws.close())
+    # Block the backend port for both localhost and 127.0.0.1 (the app may use either).
+    port = BACKEND.rsplit(":", 1)[-1]
+    page.route(re.compile(rf"^https?://[^/]+:{port}/"), lambda route: route.abort())
+    page.route_web_socket(re.compile(rf"^wss?://[^/]+:{port}/ws/telemetry"), lambda ws: ws.close())
     page.goto(FRONTEND + "/mission")
     expect(page.get_by_role("alert")).to_contain_text("Backend unreachable", timeout=10000)
     expect(page.locator(".viewport-overlay", has_text="Simulation unavailable")).to_be_visible(timeout=10000)
@@ -283,6 +288,11 @@ def test_backend_unreachable_state(browser):
     expect(page.locator(".system")).to_contain_text("Unavailable")
     page.screenshot(path=str(SHOTS / "backend-down.png"))
     ctx.close()
+
+
+def test_reduced_motion_disables_effects(page):
+    open_console(page)
+    expect(page.get_by_label("Motion effects")).not_to_be_checked()  # follows prefers-reduced-motion
 
 
 def test_keyboard_focus_visible(page):
