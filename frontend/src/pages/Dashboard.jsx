@@ -20,6 +20,22 @@ import { API_BASE_URL, api } from '../services/api';
 
 const DEFAULT_WORLD = { width: 20, height: 12 };
 const MAX_LOCAL_EVENTS = 40;
+const DEMO_SPEED = 0.6; // m/s in demo mode: slow enough to follow, and to drop an obstacle in time
+
+function readStored(key) {
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+function store(key, value) {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    /* storage unavailable: the preference is not remembered */
+  }
+}
 
 /** Frontend-observed connection changes, merged into the event timeline. */
 function useConnectionEvents(connection, backendState) {
@@ -65,6 +81,23 @@ export default function Dashboard() {
   const [demoSignal, setDemoSignal] = useState(0);
   const [objectType, setObjectType] = useState('crate');
   const [walkStart, setWalkStart] = useState(null); // first click of a walking person's route
+  const [lite, setLite] = useState(() => readStored('vistara.demoMode') === '1');
+
+  // Demo mode lowers 3D quality locally and the robot's max speed on the backend;
+  // turning it off restores the speed that was set before.
+  const toggleDemoMode = async (on) => {
+    setLite(on);
+    store('vistara.demoMode', on ? '1' : '0');
+    if (!online) return;
+    const current = telemetry?.params?.max_speed;
+    if (on && current) store('vistara.speedBeforeDemo', String(current));
+    const speed = on ? Math.min(DEMO_SPEED, current ?? DEMO_SPEED) : Number(readStored('vistara.speedBeforeDemo')) || 0.9;
+    await command.run(
+      'demo-mode',
+      () => api.configure({ max_speed: speed }),
+      () => (on ? `Demo mode on: reduced 3D quality, max speed ${speed.toFixed(1)} m/s` : `Demo mode off: max speed ${speed.toFixed(1)} m/s`),
+    );
+  };
   const online = backend.state === 'ok' && connection !== 'closed';
   const localEvents = useConnectionEvents(connection, backend.state);
 
@@ -162,7 +195,15 @@ export default function Dashboard() {
           </button>
         </div>
       )}
-      <MissionOverview telemetry={telemetry} backend={backend} connection={connection} command={command} online={online} />
+      <MissionOverview
+        telemetry={telemetry}
+        backend={backend}
+        connection={connection}
+        command={command}
+        online={online}
+        demoMode={lite}
+        onDemoMode={toggleDemoMode}
+      />
 
       {versionMismatch && (
         <div className="banner banner-warning" role="status">
@@ -185,6 +226,7 @@ export default function Dashboard() {
             online={online}
             rejected={rejected}
             selectedObstacle={selectedObstacle}
+            lite={lite}
           />
           <div className="split">
             <TelemetryPanel telemetry={telemetry} connection={connection} />

@@ -257,7 +257,9 @@ def configure_sensor(body: SensorConfigRequest, request: Request):
 @router.get("/models", tags=["perception"])
 def models(request: Request):
     """Detector registry: discovered weights, load state, latency and execution policy."""
-    return engine(request).perception.registry.snapshot()
+    registry = engine(request).perception.registry
+    registry.rescan()
+    return registry.snapshot()
 
 
 @router.post("/models/select", tags=["perception"], responses=ERRORS)

@@ -10,10 +10,12 @@ const DRAG_THRESHOLD = 5;
  * re-render per frame. Calls onError if WebGL cannot be initialised.
  */
 const Viewport3D = forwardRef(function Viewport3D(
-  { telemetry, world, onPick, onHover, layers, effects, rejected, selectedObstacle, camera, onError, label },
+  { telemetry, world, onPick, onHover, layers, effects, rejected, selectedObstacle, camera, onError, label, lite },
   ref,
 ) {
   const hostRef = useRef(null);
+  const liteRef = useRef(lite);
+  liteRef.current = lite;
   const simRef = useRef(null);
   const animRef = useRef(new SceneAnimator());
   const optsRef = useRef({});
@@ -39,6 +41,7 @@ const Viewport3D = forwardRef(function Viewport3D(
       return undefined;
     }
     simRef.current = sim;
+    sim.setQuality(!!liteRef.current);
     const host = hostRef.current;
     const resize = () => {
       const w = host.clientWidth;
@@ -59,13 +62,13 @@ const Viewport3D = forwardRef(function Viewport3D(
     let visible = true;
     const io = new IntersectionObserver(([e]) => (visible = e.isIntersecting));
     io.observe(host);
-    const FRAME_MS = 1000 / 30; // cap at 30 fps: smooth enough, half the GPU cost
+    // Cap at 30 fps (20 fps in demo mode): smooth enough, a fraction of the GPU cost.
     let last = 0;
     const loop = () => {
       raf = requestAnimationFrame(loop);
       if (!visible) return;
       const now = performance.now();
-      if (now - last < FRAME_MS) return;
+      if (now - last < 1000 / (liteRef.current ? 20 : 30)) return;
       last = now;
       const opts = optsRef.current;
       try {
@@ -104,6 +107,10 @@ const Viewport3D = forwardRef(function Viewport3D(
   useEffect(() => {
     simRef.current?.setView(camera);
   }, [camera]);
+
+  useEffect(() => {
+    simRef.current?.setQuality(!!lite);
+  }, [lite]);
 
   // Click (not drag) selects; orbit/pan drags are handled by OrbitControls.
   const onPointerDown = (e) => {

@@ -127,7 +127,13 @@ class ModelRegistry:
         self.frames_skipped = 0
         self.last_secondary_reason: str | None = None
         self._lock = threading.RLock()
-        self.discover(models_dir, extra_weights or [])
+        self._models_dir, self._extra = models_dir, extra_weights or []
+        self.discover(models_dir, self._extra)
+
+    def rescan(self) -> None:
+        """Register weights added to the models folder after startup (existing entries are kept)."""
+        with self._lock:
+            self.discover(self._models_dir, self._extra)
 
     @staticmethod
     def _check_ultralytics():

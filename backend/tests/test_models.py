@@ -1,4 +1,5 @@
 import time
+from pathlib import Path
 
 import pytest
 
@@ -46,6 +47,39 @@ def test_discovers_weight_files(tmp_path):
     r = ModelRegistry(tmp_path)
     assert "yolov8s" in r.entries
     assert r.snapshot()["models"][1]["file"] == "yolov8s.pt"
+
+
+def test_rescan_picks_up_weights_added_later(tmp_path):
+    r = ModelRegistry(tmp_path)
+    assert "late" not in r.entries
+    (tmp_path / "late.pt").write_bytes(b"added after startup")
+    r.rescan()
+    assert "late" in r.entries
+
+
+REAL = Path(__file__).resolve().parents[1] / "models"
+
+
+@pytest.mark.skipif(
+    not ((REAL / "yolov8n.pt").is_file() and (REAL / "yolov8s.pt").is_file()) or not ModelRegistry._check_ultralytics()[0],
+    reason="needs ultralytics plus yolov8n.pt and yolov8s.pt in backend/models",
+)
+def test_two_real_models_run_in_multi_mode():
+    from app.perception.camera import render
+    from app.simulation.scenarios import SCENARIOS
+
+    w = SCENARIOS["warehouse"].build()
+    r = ModelRegistry(REAL)
+    r.select(primary="yolov8n", secondary="yolov8s", mode="multi", multi_every=1, latency_budget_ms=60000)
+    frame = render((w.robot.x, w.robot.y, w.robot.theta), w.obstacles, w.width, w.height)
+    for i in range(2):
+        _, meta = r.infer(frame, i, i * 0.1)
+        assert meta["secondary_reason"] == "multi-model frame (every 1)"
+    models = {m["key"]: m for m in r.snapshot()["models"]}
+    for key in ("yolov8n", "yolov8s"):
+        assert models[key]["status"] == "loaded"
+        assert models[key]["runs"] == 2
+        assert models[key]["latency_ms"]["samples"] == 2
 
 
 def test_iou_and_fusion_policy():

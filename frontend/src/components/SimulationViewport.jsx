@@ -67,6 +67,7 @@ export function SimulationViewport({
   objectType,
   setObjectType,
   walkStart,
+  lite,
 }) {
   const viewRef = useRef(null);
   const [view, setView] = useState(() => readStored('vistara.view', '3d'));
@@ -207,7 +208,7 @@ export function SimulationViewport({
               </div>
             }
           >
-            <Viewport3D ref={viewRef} {...viewProps} camera={camera} onError={() => setWebglFailed(true)} />
+            <Viewport3D ref={viewRef} {...viewProps} camera={camera} lite={lite} onError={() => setWebglFailed(true)} />
           </Suspense>
         ) : (
           <PlanView2D ref={viewRef} {...viewProps} />

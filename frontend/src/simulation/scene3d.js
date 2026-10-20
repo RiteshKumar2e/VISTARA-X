@@ -512,6 +512,7 @@ export class Sim3D {
     const fill = new THREE.DirectionalLight('#cfe2ff', 0.35);
     fill.position.set(W, 8, 4);
     this.scene.add(hemi, sun, sun.target, fill);
+    this.sun = sun;
 
     const tex = concreteTexture();
     tex.repeat.set(W / 5, H / 5);
@@ -1013,6 +1014,16 @@ export class Sim3D {
       this.rejectMat.opacity = 1 - rAge;
       this.dirty = true;
     }
+  }
+
+  /** Demo mode: native pixel ratio of 1 and no shadow pass, roughly halving GPU work per frame. */
+  setQuality(lite) {
+    if (this.lite === lite) return;
+    this.lite = lite;
+    this.renderer.setPixelRatio(lite ? 1 : Math.min(window.devicePixelRatio || 1, 1.5));
+    this.renderer.shadowMap.enabled = !lite;
+    this.sun.castShadow = !lite;
+    this.dirty = true;
   }
 
   render() {

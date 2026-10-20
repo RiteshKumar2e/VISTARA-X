@@ -3,6 +3,7 @@ import { api } from '../services/api';
 import { PauseIcon, PlayIcon, StopIcon } from './Icons';
 import { CommandButton } from './MissionControls';
 import { MissionStatusBadge } from './StatusBadge';
+import { Term } from './Term';
 
 const SECTIONS = [
   ['simulator', 'Simulator'],
@@ -26,7 +27,7 @@ function Health({ label, ok, text }) {
 }
 
 /** Live summary at the top of the console: state, quick controls, health, section links. */
-export function MissionOverview({ telemetry, backend, connection, command, online }) {
+export function MissionOverview({ telemetry, backend, connection, command, online, demoMode, onDemoMode }) {
   const m = telemetry?.mission;
   const status = m?.status;
   const running = RUNNING.has(status) || m?.waiting;
@@ -80,6 +81,12 @@ export function MissionOverview({ telemetry, backend, connection, command, onlin
           >
             Halt
           </CommandButton>
+          <label className="check ov-demo">
+            <input type="checkbox" checked={!!demoMode} disabled={!!pending} onChange={(e) => onDemoMode(e.target.checked)} />
+            <Term tip="For slower laptops and live presentations: the 3D view renders at 20 fps without shadows at a pixel ratio of 1, and the robot's maximum speed is set to 0.6 m/s. Turning it off restores the previous speed.">
+              Demo mode
+            </Term>
+          </label>
         </div>
       </div>
       <ul className="ov-health-list" aria-label="System health summary">
