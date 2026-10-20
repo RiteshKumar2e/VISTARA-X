@@ -8,6 +8,7 @@ import { Term } from './Term';
 const SECTIONS = [
   ['simulator', 'Simulator'],
   ['controls', 'Controls'],
+  ['challenge', 'Challenge'],
   ['perception', 'Perception'],
   ['sensors', 'Sensors'],
   ['navigation', 'Navigation'],

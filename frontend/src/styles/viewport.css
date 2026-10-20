@@ -482,6 +482,7 @@
 }
 [id='simulator'],
 [id='controls'],
+[id='challenge'],
 [id='perception'],
 [id='sensors'],
 [id='navigation'],
@@ -521,4 +522,73 @@
 .sensor-table td.mono,
 .sensor-table td:nth-child(2) {
   white-space: nowrap;
+}
+
+/* ---------- Trap-the-robot challenge ---------- */
+.challenge .btn-primary {
+  margin-top: var(--space-1);
+}
+.ch-live {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+.ch-budget {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.ch-pips {
+  display: inline-flex;
+  gap: 5px;
+}
+.ch-pip {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface-muted);
+}
+.ch-pip.on {
+  background: var(--color-warning);
+  border-color: var(--color-warning);
+}
+.ch-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin: 0;
+}
+.ch-stats div {
+  padding: var(--space-2);
+  border: var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-muted);
+  min-width: 0;
+}
+.ch-stats dt {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+.ch-stats dd {
+  margin: 2px 0 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.ch-result {
+  margin-top: var(--space-3);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+}
+.ch-result p {
+  margin: 0 0 var(--space-1);
+}
+.ch-robot {
+  background: var(--color-success-soft);
+  border-color: var(--color-success);
+}
+.ch-trapped {
+  background: var(--color-warning-soft);
+  border-color: var(--color-warning);
 }

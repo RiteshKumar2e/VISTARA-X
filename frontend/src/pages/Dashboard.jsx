@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { ChallengePanel } from '../components/ChallengePanel';
 import { EventLog } from '../components/EventLog';
 import { GuidedDemo } from '../components/GuidedDemo';
 import { MissionControls } from '../components/MissionControls';
@@ -82,6 +83,7 @@ export default function Dashboard() {
   const [objectType, setObjectType] = useState('crate');
   const [walkStart, setWalkStart] = useState(null); // first click of a walking person's route
   const [lite, setLite] = useState(() => readStored('vistara.demoMode') === '1');
+  const [challenge, setChallenge] = useState(null); // 'Trap the robot' game state
 
   // Demo mode lowers 3D quality locally and the robot's max speed on the backend;
   // turning it off restores the speed that was set before.
@@ -133,6 +135,20 @@ export default function Dashboard() {
   const onMapClick = async ({ point, obstacleId }) => {
     if (!online) return;
     if (clickMode === 'obstacle') {
+      const inChallenge = challenge?.active;
+      if (inChallenge && obstacleId?.startsWith('user-')) {
+        // Barriers stay where they were placed during a challenge.
+        await command.run('map', () => Promise.reject(new Error('Barriers cannot be moved during the challenge.')), null);
+        return;
+      }
+      if (inChallenge && point && challenge.placed >= challenge.budget) {
+        reject(point);
+        await command.run('map', () => Promise.reject(new Error(`No barriers left: all ${challenge.budget} are placed.`)), null);
+        return;
+      }
+      const counted = (ok) => {
+        if (ok && inChallenge) setChallenge((c) => c && { ...c, placed: c.placed + 1 });
+      };
       if (obstacleId?.startsWith('user-')) {
         setSelectedObstacle((s) => (s === obstacleId ? null : obstacleId));
         return;
@@ -157,11 +173,13 @@ export default function Dashboard() {
           () => api.addObstacle(start.x, start.y, { label: 'person', patrol_to: point }),
           (r) => `Walking person ${r.obstacle.id} added between (${start.x.toFixed(2)}, ${start.y.toFixed(2)}) and ${at}`,
         );
+        counted(ok);
         if (!ok) reject(point);
         return;
       }
       const opts = objectType === 'person' ? { label: 'person' } : objectType === 'cone' ? { label: 'cone', shape: 'circle', size: 0.6 } : { label: objectType };
       const ok = await command.run('map', () => api.addObstacle(point.x, point.y, opts), (r) => `Obstacle ${r.obstacle.id} placed at ${at}`);
+      counted(ok);
       if (!ok) reject(point);
       return;
     }
@@ -256,6 +274,15 @@ export default function Dashboard() {
               const ok = await command.run('remove', () => api.removeObstacle(id), () => `Obstacle ${id} removed`);
               if (ok) setSelectedObstacle(null);
             }}
+          />
+          <ChallengePanel
+            telemetry={telemetry}
+            command={command}
+            online={online}
+            challenge={challenge}
+            setChallenge={setChallenge}
+            setClickMode={setClickMode}
+            setObjectType={setObjectType}
           />
           <GuidedDemo telemetry={telemetry} command={command} online={online} startSignal={demoSignal} />
           <SystemStatus backend={backend} connection={connection} telemetry={telemetry} />

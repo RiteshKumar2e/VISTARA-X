@@ -524,3 +524,26 @@ def test_demo_mode_lowers_speed_and_restores_it(page):
     page.locator(".overview-strip").get_by_label("Demo mode").uncheck()
     wait_backend(page, lambda t: abs(t["params"]["max_speed"] - before) < 1e-6, timeout=10)
     assert not page.errors, page.errors
+
+
+def test_trap_the_robot_challenge(page):
+    open_console(page)
+    speed = telemetry(page)["params"]["max_speed"]
+    panel = page.locator("#challenge")
+    panel.get_by_role("button", name="Start challenge").click()
+    expect(panel).to_contain_text("5 of 5 barriers left")
+    wait_backend(page, lambda t: t["mission"]["status"] == "navigating", timeout=20)
+    # Pause while placing so a slow headless browser cannot fall behind the robot
+    # (a player may pause too), then seal the gap between the racks at x = 15.
+    page.locator("#controls").get_by_role("button", name="Pause").click()
+    wait_backend(page, lambda t: t["mission"]["status"] == "paused", timeout=10)
+    for i, y in enumerate((4.3, 6.0, 7.7), start=1):
+        click_world(page, 15.0, y)
+        expect(panel).to_contain_text(f"{5 - i} of 5 barriers left")
+    page.locator("#controls").get_by_role("button", name="Resume").click()
+    expect(panel.locator(".ch-result")).to_contain_text("You trapped it", timeout=60000)
+    expect(panel.locator(".ch-result")).to_contain_text("collisions 0")
+    t = telemetry(page)
+    assert t["mission"]["status"] == "blocked" and t["safety"]["collisions"] == 0
+    wait_backend(page, lambda t: abs(t["params"]["max_speed"] - speed) < 1e-6, timeout=10)  # speed restored
+    assert not page.errors, page.errors

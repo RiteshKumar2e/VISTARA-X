@@ -50,6 +50,7 @@ The system runs entirely in simulation, with module boundaries designed for late
 | Telemetry | Versioned WebSocket stream with sequence numbers and bounded queues | Implemented |
 | 3D digital twin | Three.js warehouse (racking, pallets, crates, barriers, person), differential-drive robot with wheels, casters and camera mast, LiDAR points, route ribbons, orbit/top/follow cameras; 2D plan view and automatic fallback | Implemented |
 | Dashboard | Mission overview with quick controls and health, simulator, controls, perception, sensors, navigation (occupancy grid, route validity, replanning history), telemetry, event log, system health, guided and blocked-route demos | Implemented |
+| Trap-the-robot challenge | Interactive game: the viewer places up to 5 barriers while the robot drives; the robot either replans through every gap or reports *Blocked*, with the collision count shown live | Implemented |
 
 ## Architecture
 
@@ -258,6 +259,8 @@ No code edits are needed. Start both applications (see *Getting started*) and op
 | 10 | Verify the honest failure. | Status *Blocked* with *No collision-free route to the target exists*; the robot does not move (distance travelled 0.00 m). |
 | 11 | Click **Reset** and repeat. | Same start pose and deterministic scenario every time. |
 
+Interactive: click **Start challenge** in *Trap the robot* and hand the judge the mouse. They get 5 barriers to stop the robot; three placed across the gap between the racks at x = 15 seal it in (the robot reports *Blocked*), fewer leave a gap it finds. Collisions stay 0 either way.
+
 Optional: add a *Person (walking)* across the route, switch the LiDAR off to see the fail-safe speed, or select *YOLOv8* in Detection models to run real inference on the camera frame (with `yolov8s.pt` present, choose it as the secondary model and set the policy to *cascade* or *multi*). **Run guided demo** automates steps 1–8.
 
 ### Mission states
@@ -268,7 +271,7 @@ Optional: add a *Person (walking)* across the route, switch the LiDAR off to see
 
 | Status | Capabilities |
 |---|---|
-| **Implemented** | A\* planning on an inflated occupancy grid, route validation, replanning state machine, pure-pursuit control, three-layer safety (grid route check, measured proximity, ground-truth veto), mission states, REST + WebSocket API, 3D/2D visualisation, model registry and fusion, guided and blocked demos, automated tests |
+| **Implemented** | A\* planning on an inflated occupancy grid, route validation, replanning state machine, pure-pursuit control, three-layer safety (grid route check, measured proximity, ground-truth veto), mission states, REST + WebSocket API, 3D/2D visualisation, model registry and fusion, guided and blocked demos, trap-the-robot challenge, automated tests |
 | **Simulated** | All sensors (camera, depth, LiDAR, ultrasonic, IMU, odometry), robot motion (kinematic), people and obstacles, PyBullet collision checks and rendering |
 | **Unavailable here** | Real hardware; GPU inference |
 | **Future** | Real RGB-D camera and motor-controller integration, LiDAR hardware and sensor fusion, perception-built maps (SLAM), vision-language objectives, multi-robot coordination |
