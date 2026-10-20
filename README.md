@@ -237,6 +237,7 @@ The end-to-end suite accepts `E2E_BACKEND_URL` and `E2E_FRONTEND_URL` to target 
 | WebSocket closes immediately | The frontend origin is missing from `VISTARA_CORS_ORIGINS`. |
 | PyBullet fails to install on Windows | Install the *Desktop development with C++* build tools, or continue without it; the analytic fallback is used and reported. |
 | YOLOv8 option is disabled | Weights are missing or `ultralytics` is not installed. |
+| Robot moves slowly or telemetry shows *Delayed* on a low-power laptop | The browser is competing with the simulation for CPU. Untick **Motion effects** or use the **Plan** view; close other heavy tabs. The backend raises itself to above-normal priority on Windows (`VISTARA_HIGH_PRIORITY`). |
 
 ## Demo walkthrough
 
@@ -257,6 +258,9 @@ The end-to-end suite accepts `E2E_BACKEND_URL` and `E2E_FRONTEND_URL` to target 
 - Targets are selected by the operator; automatic target recognition is not implemented.
 - Moving obstacles are avoided at their current position; their motion is not predicted.
 - No accuracy, latency or success-rate benchmarks have been measured.
+- All sensors are simulated against the simulator's geometry; no physical sensor is connected.
+- Only one set of YOLO weights (`yolov8n.pt`, COCO) was available, so cascade and multi-model policies are verified with test doubles; COCO classes rarely appear in the rendered scene.
+- Automated browser tests run headless with software WebGL and reduced motion; full-motion 3D was checked visually in screenshots.
 
 **Roadmap**
 

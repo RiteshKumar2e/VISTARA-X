@@ -38,7 +38,8 @@ export function useTelemetry() {
       setConnection((c) => (c === 'open' ? c : 'connecting'));
       ws = new WebSocket(TELEMETRY_WS_URL);
       ws.onopen = () => {
-        retry = 0;
+        // Backoff is reset only after real telemetry arrives (see onmessage), so a server
+        // that accepts and immediately drops connections is not hammered.
         lastSeq.current = -1; // the server may have restarted
         clearInterval(pingTimer);
         pingTimer = setInterval(() => {
@@ -57,6 +58,7 @@ export function useTelemetry() {
           return;
         }
         if (msg.type !== 'telemetry' || msg.seq <= lastSeq.current) return;
+        retry = 0;
         setVersionMismatch(msg.version !== TELEMETRY_VERSION);
         lastSeq.current = msg.seq;
         lastAt.current = Date.now();
