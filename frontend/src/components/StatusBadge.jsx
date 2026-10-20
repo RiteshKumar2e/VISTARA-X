@@ -2,6 +2,8 @@ const MISSION = {
   idle: { label: 'Idle', tone: 'neutral' },
   planning: { label: 'Planning', tone: 'accent' },
   navigating: { label: 'Navigating', tone: 'accent' },
+  replanning: { label: 'Replanning', tone: 'warning' },
+  error: { label: 'Error', tone: 'danger' },
   paused: { label: 'Paused', tone: 'warning' },
   goal_reached: { label: 'Goal reached', tone: 'success' },
   blocked: { label: 'Blocked', tone: 'danger' },

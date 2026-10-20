@@ -38,7 +38,8 @@ BLOCKED_RETRY_WINDOW = 8.0  # seconds to wait for moving obstacles to clear
 BLOCKED_RETRY_PERIOD = 1.0
 MAX_USER_OBSTACLES = 30
 
-ACTIVE = {"planning", "navigating", "blocked_waiting"}
+ACTIVE = {"planning", "navigating", "replanning", "blocked_waiting"}
+REPLAN_DWELL = 0.3  # seconds the robot holds still after a route is invalidated, before replanning
 
 
 class CommandError(Exception):
@@ -117,7 +118,7 @@ class SimulationEngine:
                 log.exception("Simulation step failed")
                 with self._lock:
                     if self.status in ACTIVE or self.status == "paused":
-                        self._halt("stopped", "Internal simulation error - mission stopped")
+                        self._halt("error", "Internal simulation error - mission halted (see server log)")
                     self._event("error", "error", "Internal simulation error (see server log)")
             next_t += self.dt
             delay = next_t - time.monotonic()
@@ -194,6 +195,12 @@ class SimulationEngine:
             self.path = []
             self.last_plan = {"success": False, "reason": result.reason, "expanded": result.expanded}
             return False
+        valid, checked = self._validate_route(result.waypoints)
+        if not valid:
+            # Defensive double-check failed: never drive a route that crosses unsafe cells.
+            self.path = []
+            self.last_plan = {"success": False, "reason": "validation_failed", "expanded": result.expanded}
+            return False
         self.path = result.waypoints
         self.waypoint_index = 1
         self.path_version += 1
@@ -205,8 +212,76 @@ class SimulationEngine:
             "waypoints": len(result.waypoints),
             "length": round(result.length, 2),
             "planning_ms": self.last_plan_ms,
+            "validated": True,
+            "checked_samples": checked,
         }
         return True
+
+    def _validate_route(self, points) -> tuple[bool, int]:
+        """Independent check of a planned route: every sampled point along every segment
+        must lie in a free (non-inflated) cell of the current grid. Samples under the
+        robot's own footprint are skipped (the robot may start inside a safety band)."""
+        r = self.world.robot
+        step = self.grid_resolution * 0.5
+        checked = 0
+        for (ax, ay), (bx, by) in zip(points, points[1:]):
+            n = max(int(math.hypot(bx - ax, by - ay) / step), 1)
+            for i in range(n + 1):
+                px, py = ax + (bx - ax) * i / n, ay + (by - ay) * i / n
+                if math.hypot(px - r.x, py - r.y) < ROBOT_RADIUS + 0.05:
+                    continue
+                checked += 1
+                row, col = self.grid.world_to_cell(px, py)
+                if self.grid.blocked[row, col]:
+                    return False, checked
+        return True, checked
+
+    def _record_replan(self, cause: str, obstacle: str | None, outcome: str, previous: float | None) -> None:
+        lp = self.last_plan or {}
+        self.replan_history.append({
+            "sim_time": round(self.sim_time, 2),
+            "cause": cause,
+            "obstacle": obstacle,
+            "outcome": outcome,
+            "previous_length": previous,
+            "new_length": lp.get("length") if lp.get("success") else None,
+            "planning_ms": lp.get("planning_ms") if lp.get("success") else None,
+            "validated": bool(lp.get("validated")),
+        })
+
+    def _route_length(self) -> float | None:
+        if len(self.path) < 2:
+            return None
+        return round(sum(math.dist(a, b) for a, b in zip(self.path, self.path[1:])), 2)
+
+    def _begin_replan(self, cause: str, obstacle: str | None) -> None:
+        """Route invalidated: stop the robot, then replan after a short dwell."""
+        self._replan = {"cause": cause, "obstacle": obstacle, "since": self.sim_time, "previous": self._route_length()}
+        self.status = "replanning"
+        self.status_reason = f"Route invalidated by {obstacle or 'a change in the map'}; replanning"
+        self.world.robot.v = self.world.robot.w = 0.0
+
+    def _step_replanning(self) -> None:
+        rp = self._replan
+        if self.sim_time - rp["since"] < REPLAN_DWELL:
+            return  # holding still while the map settles
+        name = rp["obstacle"] or "map change"
+        if self._plan(rp["cause"]):
+            self.status = "navigating"
+            self.status_reason = ""
+            self.replans += 1
+            self._record_replan(rp["cause"], rp["obstacle"], "replanned", rp["previous"])
+            lp = self.last_plan
+            self._event(
+                "info",
+                "replanned",
+                f"Replanned around {name}: {lp['length']:.1f} m, {lp['waypoints']} waypoints "
+                f"({lp['planning_ms']:.1f} ms); route validated ({lp['checked_samples']} samples clear)",
+                obstacle=name,
+            )
+        else:
+            self._record_replan(rp["cause"], rp["obstacle"], "blocked", rp["previous"])
+            self._enter_blocked(self.last_plan["reason"])
 
     def _path_obstruction(self) -> Obstacle | None | bool:
         """Sample the planned route for the next few metres ahead of the robot.
@@ -238,12 +313,20 @@ class SimulationEngine:
                     continue  # ignore the cells under the robot itself
                 row, col = self.grid.world_to_cell(px, py)
                 if self.grid.blocked[row, col]:
-                    obs = self.world.inside_obstacle(
-                        px, py, self.inflation + MOVING_EXTRA_INFLATION
-                    )
-                    return obs or True
+                    return self._blocking_obstacle(px, py) or True
             travelled += seg * (1 - t0)
         return None
+
+    def _blocking_obstacle(self, px: float, py: float) -> Obstacle | None:
+        """Which obstacle makes the cell at (px, py) unsafe. Cells are blocked by their
+        centre, so allow up to one cell diagonal of slack; None means the map edge."""
+        reach = self.inflation + self.grid_resolution * 0.75
+        best, best_d = None, float("inf")
+        for o in self.world.obstacles:
+            d = float(o.distance(px, py)) - (MOVING_EXTRA_INFLATION if o.moving else 0.0)
+            if d < reach and d < best_d:
+                best, best_d = o, d
+        return best
 
     def _move_obstacles(self) -> None:
         if not self.params["moving_obstacles"]:
@@ -283,6 +366,8 @@ class SimulationEngine:
                 self._step_planning()
             elif self.status == "navigating":
                 self._step_navigating()
+            elif self.status == "replanning":
+                self._step_replanning()
             elif self.status == "blocked_waiting":
                 self._step_blocked_waiting()
 
@@ -351,6 +436,7 @@ class SimulationEngine:
             self.status = "navigating"
             self.status_reason = ""
             self.replans += 1
+            self._record_replan("retry", None, "replanned", None)
             self._event("success", "replanned", "Route cleared; resuming on new route")
         elif self.sim_time - self._blocked_since >= BLOCKED_RETRY_WINDOW:
             self._halt("blocked", "No collision-free route found after waiting")
@@ -371,21 +457,10 @@ class SimulationEngine:
 
         blocker = self._path_obstruction()
         if blocker is not None and self.sim_time - self.last_replan_time >= REPLAN_COOLDOWN:
-            name = blocker.id if isinstance(blocker, Obstacle) else "boundary"
-            self._event("warning", "obstruction", f"Route obstructed by {name}; replanning")
-            if self._plan("obstruction"):
-                self.replans += 1
-                lp = self.last_plan
-                self._event(
-                    "info",
-                    "replanned",
-                    f"Replanned around {name}: {lp['length']:.1f} m, {lp['waypoints']} waypoints "
-                    f"({lp['planning_ms']:.1f} ms)",
-                    obstacle=name,
-                )
-            else:
-                self._enter_blocked(self.last_plan["reason"])
-                return
+            name = blocker.id if isinstance(blocker, Obstacle) else "map edge"
+            self._event("warning", "obstruction", f"Route obstructed by {name}; robot stopped, replanning", obstacle=name)
+            self._begin_replan("obstruction", name)
+            return
 
         speed_factor = self.perception.fresh_summary().get("speed_factor", 1.0)
         if speed_factor < 1.0 and not self._slowed:
@@ -424,10 +499,13 @@ class SimulationEngine:
             v = 0.0
             self.proximity_stops += 1
             if self.sim_time - self.last_replan_time >= REPLAN_COOLDOWN * 2:
+                previous = self._route_length()
                 if self._plan("proximity"):
                     self.replans += 1
+                    self._record_replan("proximity", None, "replanned", previous)
                     self._event("info", "replanned", "Replanned after proximity stop; new route validated against the grid")
                 else:
+                    self._record_replan("proximity", None, "blocked", previous)
                     self._enter_blocked(self.last_plan["reason"])
                     return
 
@@ -480,6 +558,8 @@ class SimulationEngine:
             self._verify_collisions()
             self.sensors.reset()
             self._prox_action = "clear"
+            self.replan_history: deque = deque(maxlen=20)
+            self._replan = None
             self.proximity_stops = 0
             self.last_plan: dict | None = None
             self.last_plan_ms: float | None = None
@@ -867,6 +947,8 @@ class SimulationEngine:
                 progress = round(travelled / (travelled + remaining), 3)
             return {
                 "type": "telemetry",
+                "ts": round(time.time(), 3),  # wall-clock time of this snapshot (epoch seconds)
+                "replan_history": list(self.replan_history),
                 "version": TELEMETRY_VERSION,
                 "seq": self.seq,
                 "sim_time": round(self.sim_time, 2),

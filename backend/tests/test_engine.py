@@ -61,8 +61,17 @@ def test_dynamic_obstacle_triggers_replan(engine):
     obstacle = engine.inject_on_route()
     assert obstacle["id"].startswith("user-")
     engine.step()
+    # Route invalidated: the robot stops and enters REPLANNING before any new route is used.
+    assert engine.status == "replanning"
+    assert engine.world.robot.v == 0.0
+    assert engine.replans == 0
+    assert run_until(engine, {"navigating"}, max_seconds=2)
     assert engine.replans == 1
     assert engine.path != old_path
+    entry = engine.replan_history[-1]
+    assert entry["cause"] == "obstruction" and entry["obstacle"] == obstacle["id"]
+    assert entry["outcome"] == "replanned" and entry["validated"] is True
+    assert engine.last_plan["validated"] and engine.last_plan["checked_samples"] > 0
     # The new route keeps clear of the injected barrier.
     barrier = next(o for o in engine.world.obstacles if o.id == obstacle["id"])
     for a, b in zip(engine.path, engine.path[1:]):
@@ -253,3 +262,34 @@ def test_obstacles_cannot_overlap(engine):
     with pytest.raises(CommandError):
         engine.add_obstacle(5.0, 9.5)  # inside shelf-1
     engine.add_obstacle(3.0, 10.6)  # clear of both
+
+
+def test_route_validation_rejects_unsafe_route(engine):
+    engine.set_target(18.5, 6.0)
+    ok, checked = engine._validate_route([(1.5, 6.0), (18.5, 6.0)])
+    assert ok and checked > 50
+    ok, _ = engine._validate_route([(1.5, 6.0), (10.0, 6.0), (10.0, 10.0)])  # crosses shelf-3
+    assert not ok
+
+
+def test_internal_error_enters_error_state(engine, monkeypatch):
+    engine.set_target(18.5, 6.0)
+    engine.navigate()
+
+    def boom():
+        raise RuntimeError("simulated fault")
+
+    monkeypatch.setattr(engine, "_step_planning", boom)
+    engine.start()  # real loop: the exception handler must halt safely in ERROR
+    try:
+        import time
+
+        for _ in range(40):
+            if engine.status == "error":
+                break
+            time.sleep(0.05)
+        assert engine.status == "error"
+        assert engine.world.robot.v == 0.0
+        assert any(e["type"] == "error" for e in engine.events)
+    finally:
+        engine.shutdown()

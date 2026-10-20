@@ -69,7 +69,7 @@ export function SystemStatus({ backend, connection, telemetry }) {
   }
 
   return (
-    <section className="panel system" aria-labelledby="system-title">
+    <section className="panel system" id="health" aria-labelledby="system-title">
       <div className="panel-head">
         <h2 id="system-title">System status</h2>
       </div>

@@ -13,7 +13,7 @@ import {
   StopIcon,
 } from './Icons';
 
-const ACTIVE = new Set(['planning', 'navigating']);
+const ACTIVE = new Set(['planning', 'navigating', 'replanning']);
 
 export function CommandButton({ name, pending, icon: Icon, children, className = 'btn', ...props }) {
   const busy = pending === name;
@@ -113,7 +113,7 @@ export function MissionControls({
   };
 
   return (
-    <section className="panel controls" aria-labelledby="controls-title">
+    <section className="panel controls" id="controls" aria-labelledby="controls-title">
       <div className="panel-head">
         <h2 id="controls-title">Mission controls</h2>
       </div>

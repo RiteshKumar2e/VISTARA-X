@@ -88,6 +88,7 @@ def open_console(page):
 
 def click_world(page, x, y):
     """Click the plan-view canvas at world coordinates (matches renderer.makeView)."""
+    page.locator(".plan-view canvas").scroll_into_view_if_needed()
     box = page.locator(".plan-view canvas").bounding_box()
     narrow = box["width"] < 520
     left, right, top = (20 if narrow else 28), 10, 10
@@ -95,7 +96,15 @@ def click_world(page, x, y):
     page.mouse.click(box["x"] + left + x * scale, box["y"] + top + (12 - y) * scale)
 
 
-def test_full_mission_via_ui(page):
+@pytest.fixture
+def demo_speed(page):
+    """Run at a realistic demo speed so a slow headless browser can act mid-mission."""
+    backend(page, "post", "/simulation/config", {"max_speed": 0.6})
+    yield
+    backend(page, "post", "/simulation/config", {"max_speed": 1.5})
+
+
+def test_full_mission_via_ui(page, demo_speed):
     open_console(page)
     expect(page.get_by_role("button", name="Start mission")).to_be_disabled()
     click_world(page, 18.5, 6.0)
@@ -112,10 +121,17 @@ def test_full_mission_via_ui(page):
     page.get_by_role("button", name="Drop obstacle on route").click()
     expect(page.locator(".events")).to_contain_text("Replanned around")
     assert telemetry(page)["mission"]["replans"] >= 1
-    toast = page.locator(".toast").filter(has_text="Route replanned")
-    expect(toast).to_be_visible(timeout=5000)
-    toast.get_by_role("button", name="Dismiss notification").click()
-    expect(toast).to_have_count(0)
+    # The replan is recorded with its cause and a validated route.
+    hist = telemetry(page)["replan_history"]
+    assert hist[-1]["cause"] == "obstruction" and hist[-1]["validated"] is True
+    expect(page.locator("#navigation")).to_contain_text("Route obstructed")
+    expect(page.locator("#navigation canvas.grid-canvas")).to_be_visible()
+    # Dismiss the newest notification (older ones may be auto-dismissing after 8 s).
+    toast = page.locator(".toast").filter(has_text="Route replanned").last
+    expect(toast).to_be_visible()
+    text = toast.inner_text()
+    toast.get_by_role("button", name="Dismiss notification").click(timeout=5000)
+    expect(page.locator(".toast").filter(has_text=text.splitlines()[-1])).to_have_count(0)
     page.screenshot(path=str(SHOTS / "mission-replanned.png"))
 
     expect(page.locator(".viewport [data-status]")).to_contain_text("Goal reached", timeout=90000)
@@ -133,12 +149,12 @@ def test_pause_resume_stop_buttons(page):
     page.get_by_role("button", name="Set target").click()
     page.get_by_role("button", name="Start mission").click()
     expect(page.locator(".viewport [data-status]")).to_contain_text("Navigating")
-    page.get_by_role("button", name="Pause").click()
+    page.locator("#controls").get_by_role("button", name="Pause").click()
     expect(page.locator(".viewport [data-status]")).to_contain_text("Paused")
     x = telemetry(page)["robot"]["x"]
     time.sleep(0.5)
     assert telemetry(page)["robot"]["x"] == x
-    page.get_by_role("button", name="Resume").click()
+    page.locator("#controls").get_by_role("button", name="Resume").click()
     expect(page.locator(".viewport [data-status]")).to_contain_text("Navigating")
     page.get_by_role("button", name="Stop", exact=True).click()
     expect(page.locator(".viewport [data-status]")).to_contain_text("Stopped")
@@ -267,6 +283,7 @@ def test_mobile_menu_and_touch_target(browser):
     # Tap the map to set a target.
     page.goto(FRONTEND + "/mission")
     expect(page.locator(".viewport [data-status]")).to_contain_text("Idle", timeout=15000)
+    page.locator(".plan-view canvas").scroll_into_view_if_needed()
     box = page.locator(".plan-view canvas").bounding_box()
     scale = (box["width"] - 30) / 20
     page.touchscreen.tap(box["x"] + 20 + 10 * scale, box["y"] + 10 + (12 - 6) * scale)
@@ -436,6 +453,17 @@ def test_add_walking_person(page):
     click_world(page, 10.0, 6.0)
     click_world(page, 10.0, 9.0)
     expect(page.locator(".feedback-error")).to_contain_text("passes through shelf-3", timeout=10000)
+
+
+
+def test_blocked_route_demo_button(page):
+    open_console(page)
+    page.get_by_role("button", name="Run blocked-route demo").click()
+    expect(page.locator(".blocked-demo")).to_contain_text("Verified from telemetry: status BLOCKED", timeout=20000)
+    t = telemetry(page)
+    assert t["scenario"] == "enclosed" and t["mission"]["status"] == "blocked"
+    assert t["mission"]["distance_travelled"] == 0.0
+    expect(page.locator(".overview-strip [data-status]")).to_contain_text("Blocked")
 
 
 SHOTS.mkdir(parents=True, exist_ok=True)

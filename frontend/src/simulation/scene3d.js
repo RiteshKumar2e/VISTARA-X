@@ -354,8 +354,10 @@ const LED = {
   idle: '#9aa5ab',
   planning: '#3fc1b5',
   navigating: '#3fc1b5',
+  replanning: '#f0b429',
   paused: '#f0b429',
   goal_reached: '#5fd38d',
+  error: '#ff5d4f',
   blocked: '#ff5d4f',
   stopped: '#9aa5ab',
 };

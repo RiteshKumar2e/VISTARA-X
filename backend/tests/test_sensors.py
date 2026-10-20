@@ -109,10 +109,14 @@ def test_engine_proximity_stop_and_lidar_map(engine):
     r = engine.world.robot
     # Drop an obstacle just ahead, inside the corridor, before the grid check can replan.
     engine.add_obstacle(r.x + 0.95, r.y, size=0.4)
-    for _ in range(4):
+    for _ in range(3):  # stays within the 0.3 s replanning dwell; LiDAR samples at 10 Hz
         engine.step()
-    types = [e["type"] for e in engine.events]
-    assert "proximity" in types
+    # The simulated sensors measure the new obstacle inside the driving corridor...
+    decision = engine.sensors.proximity(engine.world.robot, corridor_length=2.0)
+    assert decision["action"] in ("slow", "stop") and decision["front_clearance"] < 0.9
+    assert "lidar" in decision["sources"]
+    # ...and the robot stops to replan instead of driving on.
+    assert engine.status == "replanning" and engine.world.robot.v == 0.0
     assert engine.collisions == 0
     assert run_until(engine, {"goal_reached", "blocked"})
     assert engine.collisions == 0

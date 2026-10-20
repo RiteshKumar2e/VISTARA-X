@@ -17,7 +17,7 @@ function Row({ label, children, tone }) {
 export function TelemetryPanel({ telemetry }) {
   if (!telemetry) {
     return (
-      <section className="panel" aria-labelledby="telemetry-title">
+      <section className="panel" id="telemetry" aria-labelledby="telemetry-title">
         <div className="panel-head">
           <h2 id="telemetry-title">Live telemetry</h2>
         </div>
@@ -31,7 +31,7 @@ export function TelemetryPanel({ telemetry }) {
   const progress = m.progress;
 
   return (
-    <section className="panel" aria-labelledby="telemetry-title">
+    <section className="panel" id="telemetry" aria-labelledby="telemetry-title">
       <div className="panel-head">
         <h2 id="telemetry-title">Live telemetry</h2>
         <span className="muted small mono">seq {telemetry.seq}</span>

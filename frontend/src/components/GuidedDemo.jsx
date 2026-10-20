@@ -10,6 +10,46 @@ const EMPTY_RUN = { prepared: false, targetSet: false, started: false, injected:
  * Guided judge demo. Every step calls the real backend and is marked complete only
  * when live telemetry confirms it, so the walkthrough cannot show a fake success.
  */
+/** Second judge scenario: a target that cannot be reached must end in BLOCKED. */
+function BlockedDemo({ telemetry, command, online }) {
+  const [started, setStarted] = useState(false);
+  const m = telemetry?.mission;
+  const blocked = started && telemetry?.scenario === 'enclosed' && m?.status === 'blocked' && !m.waiting;
+  const run = async () => {
+    setStarted(false);
+    const steps = [
+      () => api.reset('enclosed'),
+      () => api.setTarget(16, 6),
+      () => api.navigate(),
+    ];
+    for (const step of steps) {
+      const ok = await command.run('blocked-demo', step, null);
+      if (!ok) return;
+    }
+    setStarted(true);
+  };
+  return (
+    <div className="blocked-demo">
+      <h3>Blocked-route scenario</h3>
+      <p className="muted small">
+        Loads the sealed bay, sets the target inside it and starts the mission. The planner must report BLOCKED and the robot
+        must not move.
+      </p>
+      <button type="button" className="btn" disabled={!online || !!command.pending} onClick={run}>
+        Run blocked-route demo
+      </button>
+      <div role="status" aria-live="polite">
+        {started && !blocked && <p className="hint">Planning...</p>}
+        {blocked && (
+          <p className="feedback-msg feedback-success">
+            Verified from telemetry: status BLOCKED ({m.reason}); robot travelled {m.distance_travelled.toFixed(2)} m.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function GuidedDemo({ telemetry, command, online, startSignal = 0 }) {
   const [run, setRun] = useState(EMPTY_RUN);
   const [auto, setAuto] = useState(false);
@@ -188,6 +228,7 @@ export function GuidedDemo({ telemetry, command, online, startSignal = 0 }) {
           </p>
         )}
       </div>
+      <BlockedDemo telemetry={telemetry} command={command} online={online} />
     </section>
   );
 }

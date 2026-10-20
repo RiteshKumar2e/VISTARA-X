@@ -100,7 +100,7 @@ export function PerceptionPanel({ telemetry, command, online }) {
 
   if (!p) {
     return (
-      <section className="panel" aria-labelledby="perception-title">
+      <section className="panel" id="perception" aria-labelledby="perception-title">
         <div className="panel-head">
           <h2 id="perception-title">Perception</h2>
         </div>
@@ -115,7 +115,7 @@ export function PerceptionPanel({ telemetry, command, online }) {
   const rendererLabel = p.renderer === 'pybullet' ? 'PyBullet render' : 'ray-cast render';
 
   return (
-    <section className="panel" aria-labelledby="perception-title">
+    <section className="panel" id="perception" aria-labelledby="perception-title">
       <div className="panel-head">
         <h2 id="perception-title">
           Perception

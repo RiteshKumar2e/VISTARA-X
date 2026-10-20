@@ -19,7 +19,8 @@ VISTARA-X is a simulation-first autonomous robotics platform. A simulated robot 
 - [Testing](#testing)
 - [Deployment and security](#deployment-and-security)
 - [Troubleshooting](#troubleshooting)
-- [Demo walkthrough](#demo-walkthrough)
+- [Judge demonstration guide](#judge-demonstration-guide)
+- [Capability status](#capability-status)
 - [Limitations and roadmap](#limitations-and-roadmap)
 
 ---
@@ -48,7 +49,7 @@ The system runs entirely in simulation, with module boundaries designed for late
 | Failure handling | Honest *Blocked* state when no safe route exists | Implemented |
 | Telemetry | Versioned WebSocket stream with sequence numbers and bounded queues | Implemented |
 | 3D digital twin | Three.js warehouse (racking, pallets, crates, barriers, person), differential-drive robot with wheels, casters and camera mast, LiDAR points, route ribbons, orbit/top/follow cameras; 2D plan view and automatic fallback | Implemented |
-| Dashboard | Mission controls, telemetry, sensors and model panels, perception, event timeline, guided demo | Implemented |
+| Dashboard | Mission overview with quick controls and health, simulator, controls, perception, sensors, navigation (occupancy grid, route validity, replanning history), telemetry, event log, system health, guided and blocked-route demos | Implemented |
 
 ## Architecture
 
@@ -111,7 +112,7 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:5173` and select **Live mission**. See [Demo walkthrough](#demo-walkthrough) for a guided run.
+Open `http://localhost:5173` and select **Live mission**. See the [judge demonstration guide](#judge-demonstration-guide).
 
 ## API
 
@@ -239,14 +240,38 @@ The end-to-end suite accepts `E2E_BACKEND_URL` and `E2E_FRONTEND_URL` to target 
 | YOLOv8 option is disabled | Weights are missing or `ultralytics` is not installed. |
 | Robot moves slowly or telemetry shows *Delayed* on a low-power laptop | The browser is competing with the simulation for CPU. Untick **Motion effects** or use the **Plan** view; close other heavy tabs. The backend raises itself to above-normal priority on Windows (`VISTARA_HIGH_PRIORITY`). |
 
-## Demo walkthrough
+## Judge demonstration guide
 
-1. Start both applications and open **Live mission**.
-2. Click **Run guided demo**. Each step completes only when backend telemetry confirms it: the warehouse loads, the target (18.5, 6.0) is selected, A\* plans a route, the robot drives, a barrier is dropped across the route, the route is replanned, and **Goal reached** appears only within 0.2 m of the target.
-3. Explore manually: click the map to set a target, use **Pause / Resume / Stop**, zoom with **+ / −** and drag to pan, and in **Place obstacle** mode add an obstacle or click one you added to move it.
-   - Add people: in **Add obstacle** mode choose *Person (standing)*, or *Person (walking)* and click the start and end of their route. Walking people patrol at 0.45 m/s, give way to the robot, and trigger the person-ahead speed limit and replanning.
-4. Show an honest failure: load **Enclosed bay (unreachable)**, set target `16, 6`, and start. The mission reports **Blocked** and the robot does not move.
-5. On **Architecture**, select any stage to see its inputs, outputs, limitations and live backend values.
+No code edits are needed. Start both applications (see *Getting started*) and open `http://localhost:5173/mission`.
+
+| # | Action | What to verify |
+|---|---|---|
+| 1 | The warehouse loads (or click **Reset** / **Load** with *Warehouse aisle*). | 3D racking, pallets, a patrolling person and the robot at its start pose (1.5, 6.0). |
+| 2 | Inspect the robot: **Follow robot** camera, toggle **LiDAR scan** and **Camera overlay**. | Wheels, casters and camera mast; LiDAR returns on surfaces facing the robot; the Sensors panel shows every sensor *Live (simulated)*. |
+| 3 | **Select destination** and click the far end of the aisle (or enter `18.5`, `6`), then **Start mission**. | Status *Planning* then *Navigating*; the A\* route draws on the floor; Navigation shows *Route validity: Valid*. |
+| 4 | Watch the robot. | Pose, heading, speed and remaining distance update in Telemetry; wheels turn. |
+| 5 | Click **Drop obstacle on route** (or use *Add obstacle* and click on the route). | A barrier appears across the route. |
+| 6 | Safety response. | Status *Replanning*; the robot stops; the event log says *Route obstructed by user-N; robot stopped, replanning*; the blocking obstacle is outlined. |
+| 7 | Alternative route. | A new route is drawn (the old one fades as a dashed line); the event says *route validated (N samples clear)*; Navigation lists the replan. |
+| 8 | Completion. | *Goal reached* only when the robot is within 0.2 m of the target; collisions stay 0. |
+| 9 | Blocked scenario: click **Run blocked-route demo** in the Guided demo card (or load *Enclosed bay*, set target `16, 6`, Start). | — |
+| 10 | Verify the honest failure. | Status *Blocked* with *No collision-free route to the target exists*; the robot does not move (distance travelled 0.00 m). |
+| 11 | Click **Reset** and repeat. | Same start pose and deterministic scenario every time. |
+
+Optional: add a *Person (walking)* across the route, switch the LiDAR off to see the fail-safe speed, or select *YOLOv8* in Detection models to run real inference on the camera frame. **Run guided demo** automates steps 1–8.
+
+### Mission states
+
+`idle` → `planning` → `navigating` ⇄ `replanning` → `goal_reached`, with `paused`, `stopped` (operator), `blocked` (no valid route; with moving obstacles the robot first waits up to 8 s) and `error` (internal fault, robot halted). Every new route is re-validated cell by cell against the occupancy grid before the robot moves.
+
+## Capability status
+
+| Status | Capabilities |
+|---|---|
+| **Implemented** | A\* planning on an inflated occupancy grid, route validation, replanning state machine, pure-pursuit control, three-layer safety (grid route check, measured proximity, ground-truth veto), mission states, REST + WebSocket API, 3D/2D visualisation, model registry and fusion, guided and blocked demos, automated tests |
+| **Simulated** | All sensors (camera, depth, LiDAR, ultrasonic, IMU, odometry), robot motion (kinematic), people and obstacles, PyBullet collision checks and rendering |
+| **Unavailable here** | A second set of YOLO weights (cascade/multi policies tested with doubles); real hardware; GPU inference |
+| **Future** | Real RGB-D camera and motor-controller integration, LiDAR hardware and sensor fusion, perception-built maps (SLAM), vision-language objectives, multi-robot coordination |
 
 ## Limitations and roadmap
 

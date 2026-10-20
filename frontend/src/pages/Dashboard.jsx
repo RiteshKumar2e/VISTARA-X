@@ -3,7 +3,9 @@ import { Link } from 'react-router-dom';
 import { EventLog } from '../components/EventLog';
 import { GuidedDemo } from '../components/GuidedDemo';
 import { MissionControls } from '../components/MissionControls';
+import { MissionOverview } from '../components/MissionOverview';
 import { ModelsPanel } from '../components/ModelsPanel';
+import { NavigationPanel } from '../components/NavigationPanel';
 import { PerceptionPanel } from '../components/PerceptionPanel';
 import { SensorsPanel } from '../components/SensorsPanel';
 import { SimulationViewport } from '../components/SimulationViewport';
@@ -160,6 +162,8 @@ export default function Dashboard() {
           </button>
         </div>
       )}
+      <MissionOverview telemetry={telemetry} backend={backend} connection={connection} command={command} online={online} />
+
       {versionMismatch && (
         <div className="banner banner-warning" role="status">
           The backend sends a different telemetry version than this dashboard expects. Update both apps together.
@@ -188,6 +192,9 @@ export default function Dashboard() {
           </div>
           <div className="split">
             <SensorsPanel telemetry={telemetry} command={command} online={online} />
+            <NavigationPanel telemetry={telemetry} online={online} />
+          </div>
+          <div className="split">
             <ModelsPanel telemetry={telemetry} command={command} online={online} />
           </div>
         </div>

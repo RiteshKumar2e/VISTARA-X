@@ -81,7 +81,7 @@ export function SensorsPanel({ telemetry, command, online }) {
 
   if (!sensorsData) {
     return (
-      <section className="panel" aria-labelledby="sensors-title">
+      <section className="panel" id="sensors" aria-labelledby="sensors-title">
         <div className="panel-head">
           <h2 id="sensors-title">Sensors</h2>
         </div>
@@ -100,7 +100,7 @@ export function SensorsPanel({ telemetry, command, online }) {
       : command.run('sensor', () => api.configureSensor(s.key, { enabled }), () => `${s.name} ${enabled ? 'enabled' : 'disabled'}`);
 
   return (
-    <section className="panel sensors" aria-labelledby="sensors-title">
+    <section className="panel sensors" id="sensors" aria-labelledby="sensors-title">
       <div className="panel-head">
         <h2 id="sensors-title">Sensors</h2>
         <span className="tag tag-accent">

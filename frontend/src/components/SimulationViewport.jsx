@@ -113,7 +113,7 @@ export function SimulationViewport({
   const conn = { open: 'Live', stale: 'Delayed', connecting: 'Connecting', closed: 'Offline' }[connection];
 
   return (
-    <section className="panel viewport" aria-labelledby="viewport-title">
+    <section className="panel viewport" id="simulator" aria-labelledby="viewport-title">
       <div className="panel-head">
         <h2 id="viewport-title">Mission workspace</h2>
         <ul className="chips-row" aria-label="Simulation mode">

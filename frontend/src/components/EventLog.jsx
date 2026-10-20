@@ -20,7 +20,7 @@ export const EventLog = memo(
     .sort((a, b) => (a.timestamp < b.timestamp ? 1 : a.timestamp > b.timestamp ? -1 : 0))
     .slice(0, MAX_SHOWN);
   return (
-    <section className="panel events" aria-labelledby="events-title">
+    <section className="panel events" id="events" aria-labelledby="events-title">
       <div className="panel-head">
         <h2 id="events-title">Event log</h2>
         <span className="muted small">{events.length} recent</span>
