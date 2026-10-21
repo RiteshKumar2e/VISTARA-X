@@ -27,6 +27,7 @@ MIN_MATCH_SCORE = 0.25  # mean likelihood below which a match is rejected (poor 
 MAX_MATCH_POINTS = 60
 TRAJECTORY_STEP = 0.10  # m between stored trajectory points
 MAX_TRAJECTORY = 2000
+STATIONARY_FUSE_EVERY = 5  # while standing still, fuse one scan in five
 
 
 def _wrap(a: float) -> float:
@@ -147,6 +148,8 @@ class SlamSession:
         self.max_pose_error = 0.0
         self.last_update_time = None
         self.odometry_used = True
+        self._matched_pose = None
+        self._still_scans = 0
 
     def step(self, odom_pose, lidar, true_pose, sim_time: float) -> None:
         """Called every simulation tick. ``odom_pose`` is the wheel-odometry estimate
@@ -162,11 +165,23 @@ class SlamSession:
             self._last_odom = None
 
         reading = lidar.reading if lidar.enabled else None
-        if self.enabled and reading is not None and reading["frame"] != self._last_lidar_seq:
+        new_scan = self.enabled and reading is not None and reading["frame"] != self._last_lidar_seq
+        if new_scan:
             self._last_lidar_seq = reading["frame"]
+            # While the robot stands still, matching cannot improve the pose and fusing
+            # every scan adds nothing new: match only after motion, and fuse every
+            # STATIONARY_FUSE_EVERY-th scan so that people walking past still update the map.
+            # Without odometry the scan matcher is the only motion source: always match.
+            moved = odom_pose is None or self._matched_pose is None or (
+                math.hypot(self.estimate[0] - self._matched_pose[0], self.estimate[1] - self._matched_pose[1]) > 0.01
+                or abs(_wrap(self.estimate[2] - self._matched_pose[2])) > math.radians(0.5)
+            )
+            self._still_scans = 0 if moved else self._still_scans + 1
+            new_scan = moved or self._still_scans % STATIONARY_FUSE_EVERY == 0
+        if new_scan:
             rel = np.radians(np.array([b for b, _ in reading["scan"]], dtype=float))
             ranges = np.array([np.nan if r is None else r for _, r in reading["scan"]], dtype=float)
-            if self.map.scans > 0 and int((self.map.states() == OCCUPIED).sum()) >= MIN_OCCUPIED_FOR_MATCH:
+            if moved and self.map.scans > 0 and int((self.map.states() == OCCUPIED).sum()) >= MIN_OCCUPIED_FOR_MATCH:
                 pose, score, used = self.matcher.match(self.map, self.estimate, rel, ranges)
                 self.match_score = round(score, 3)
                 if used:
@@ -174,6 +189,7 @@ class SlamSession:
                     self.matched += 1
                 else:
                     self.unmatched += 1
+            self._matched_pose = self.estimate
             x, y, th = self.estimate
             self.map.integrate(self.estimate, th + rel, ranges, lidar.max_range)
             hit = np.isfinite(ranges)

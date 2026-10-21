@@ -21,9 +21,13 @@ from ..simulation.world import ROBOT_RADIUS, Obstacle
 def cast_rays(ox: float, oy: float, angles: np.ndarray, obstacles: list[Obstacle],
               width: float, height: float, max_range: float):
     """Distance along each ray to the first surface (obstacle or map boundary).
+    ``ox``/``oy`` may be scalars or one origin per ray.
     Returns (distances, hit_index) where hit_index -1 = boundary, -2 = no hit in range."""
     dx, dy = np.cos(angles), np.sin(angles)
     n = len(angles)
+    # Obstacles that cannot be reached within max_range are skipped (cheap pre-filter).
+    cx, cy = float(np.mean(ox)), float(np.mean(oy))
+    spread = float(np.max(np.hypot(np.asarray(ox) - cx, np.asarray(oy) - cy))) if np.ndim(ox) else 0.0
     best = np.full(n, np.inf)
     idx = np.full(n, -2, dtype=int)
     with np.errstate(divide="ignore", invalid="ignore"):
@@ -33,6 +37,8 @@ def cast_rays(ox: float, oy: float, angles: np.ndarray, obstacles: list[Obstacle
         m = tb < best
         best[m], idx[m] = tb[m], -1
         for k, o in enumerate(obstacles):
+            if float(o.distance(cx, cy)) > max_range + spread:
+                continue
             if o.shape == "circle":
                 fx, fy = ox - o.x, oy - o.y
                 b = fx * dx + fy * dy
@@ -45,8 +51,10 @@ def cast_rays(ox: float, oy: float, angles: np.ndarray, obstacles: list[Obstacle
                 y0, y1 = o.y - o.h / 2, o.y + o.h / 2
                 t1, t2 = (x0 - ox) / dx, (x1 - ox) / dx
                 t3, t4 = (y0 - oy) / dy, (y1 - oy) / dy
-                tmin = np.nan_to_num(np.maximum(np.minimum(t1, t2), np.minimum(t3, t4)), nan=-np.inf)
-                tmax = np.nan_to_num(np.minimum(np.maximum(t1, t2), np.maximum(t3, t4)), nan=-np.inf)
+                tmin = np.maximum(np.minimum(t1, t2), np.minimum(t3, t4))
+                tmax = np.minimum(np.maximum(t1, t2), np.maximum(t3, t4))
+                tmin[np.isnan(tmin)] = -np.inf
+                tmax[np.isnan(tmax)] = -np.inf
                 t = np.where((tmax >= tmin) & (tmax > 1e-6), np.maximum(tmin, 1e-6), np.inf)
             m = t < best
             best[m], idx[m] = t[m], k
@@ -202,12 +210,15 @@ class Ultrasonic(SensorBase):
     def measure(self, pose, obstacles, width, height, sim_time) -> dict:
         x, y, theta = pose
         out = []
-        for b in self.bearings_deg:
-            offs = np.radians(np.linspace(b - self.cone_deg / 2, b + self.cone_deg / 2, 7))
-            # Sensors sit on the chassis edge; measure from the robot surface.
-            sx = x + ROBOT_RADIUS * math.cos(theta + math.radians(b))
-            sy = y + ROBOT_RADIUS * math.sin(theta + math.radians(b))
-            d, idx = cast_rays(sx, sy, theta + offs, obstacles, width, height, self.max_range)
+        # All channels in one ray cast: 7 rays per cone, each from its sensor on the chassis edge.
+        bearings = list(self.bearings_deg)
+        offs = np.concatenate([np.radians(np.linspace(b - self.cone_deg / 2, b + self.cone_deg / 2, 7)) for b in bearings])
+        base = np.repeat(np.radians(bearings), 7)
+        sx = x + ROBOT_RADIUS * np.cos(theta + base)
+        sy = y + ROBOT_RADIUS * np.sin(theta + base)
+        dist, hit = cast_rays(sx, sy, theta + offs, obstacles, width, height, self.max_range)
+        for i, b in enumerate(bearings):
+            d, idx = dist[i * 7:(i + 1) * 7], hit[i * 7:(i + 1) * 7]
             d = d[idx != -2]
             if len(d):
                 val = float(max(d.min() + self._rng.normal(0, self.noise_std), 0.0))
