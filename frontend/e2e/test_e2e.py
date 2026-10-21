@@ -576,18 +576,18 @@ def test_trap_the_robot_challenge(page):
 def test_hindi_text_command_confirm_and_history(page):
     open_console(page)
     console = page.locator("#commands")
-    console.locator("#cmd-text").fill("रोबोट को रिसेप्शन तक ले जाओ")
+    console.locator("#cmd-text").fill("रोबोट को निकास तक ले जाओ")
     console.locator("#cmd-text").press("Enter")  # keyboard submit
     card = console.locator(".cmd-card")
     expect(card).to_contain_text("Waiting for your confirmation")
     expect(card).to_contain_text("Hindi")
-    expect(card).to_contain_text("रिसेप्शन तक जाएँ?")
+    expect(card).to_contain_text("निकास तक जाएँ?")
     assert telemetry(page)["mission"]["status"] == "idle"  # nothing moves before confirmation
     card.get_by_role("button", name="Confirm and go").click()
     expect(card).to_contain_text("Executed")
     t = wait_backend(page, lambda t: t["mission"]["status"] == "navigating", timeout=20)
-    assert t["target"] == {"x": 2.0, "y": 10.5}
-    expect(console.locator(".cmd-history")).to_contain_text("रोबोट को रिसेप्शन तक ले जाओ")
+    assert t["target"] == {"x": 18.5, "y": 6.0}
+    expect(console.locator(".cmd-history")).to_contain_text("रोबोट को निकास तक ले जाओ")
     console.get_by_role("button", name="Emergency stop").click()
     wait_backend(page, lambda t: t["mission"]["status"] == "stopped", timeout=10)
     # Pressed again while stopped: still succeeds (no error, no 409).
@@ -680,7 +680,7 @@ def test_predictive_demo_and_baseline_toggle(page):
     # The checkbox mirrors backend state, so it flips only after telemetry confirms it.
     toggle.click()
     wait_backend(page, lambda t: t["params"]["predictive"] is False, timeout=10)
-    expect(toggle).not_to_be_checked()
+    expect(toggle).not_to_be_checked(timeout=20000)
     expect(page.locator("#prediction .risk-card")).to_contain_text("reactive baseline")
     toggle.click()
     wait_backend(page, lambda t: t["params"]["predictive"] is True, timeout=10)

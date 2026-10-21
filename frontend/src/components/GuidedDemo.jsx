@@ -80,7 +80,7 @@ function PredictiveDemo({ telemetry, command, online }) {
     ['done', 'The robot continues and reaches the destination'],
   ];
   return (
-    <div className="blocked-demo predictive-demo">
+    <div className="predictive-demo">
       <h3>Predictive crossing scenario</h3>
       <p className="muted small">
         Loads the crossing corridor (a person who does not give way, a cart that turns) and drives to the exit with predictive

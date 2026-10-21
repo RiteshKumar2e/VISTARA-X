@@ -36,7 +36,7 @@ export function EvaluationPanel({ online }) {
       <div className="panel-head">
         <h2 id="evaluation-title">Evaluation: predictive vs reactive</h2>
         <button type="button" className="btn btn-sm" onClick={load} disabled={!online}>
-          Reload
+          Refresh results
         </button>
       </div>
       {error && (

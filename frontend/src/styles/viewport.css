@@ -508,7 +508,8 @@
 .grid-figure figcaption {
   margin-top: var(--space-2);
 }
-.blocked-demo {
+.blocked-demo,
+.predictive-demo {
   margin-top: var(--space-4);
   padding-top: var(--space-4);
   border-top: var(--border);

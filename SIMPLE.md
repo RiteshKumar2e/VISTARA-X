@@ -107,8 +107,9 @@ Overview (problem, solution, real-world uses), Live mission, Architecture, Techn
 
 ## 12. Tests
 
-- **Backend:** 138 tests pass.
-- **Browser (Playwright):** 32 tests. Inme fake microphone se Whisper tak ka voice test bhi hai.
+- **Backend:** 148 tests pass (prediction, risk, tracking, replanning, commands aur mapping samet).
+- **Browser (Playwright):** 33 tests. Inme fake microphone se Whisper tak ka voice test aur predictive demo bhi hai.
+- **Evaluation:** `python -m app.evaluation` (predictive vs reactive, 9+9 runs, 7 scenario checks sab pass).
 
 ## 13. Imaandari se
 
