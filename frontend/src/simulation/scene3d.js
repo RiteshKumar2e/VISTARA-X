@@ -949,6 +949,64 @@ export class Sim3D {
     this.dirty = true;
   }
 
+  /** LiDAR tracks: ring at the track, predicted centre line and points, conflict markers. */
+  _syncPredictions(t, visible) {
+    if (!this.predGroup) {
+      this.predGroup = new THREE.Group();
+      this.predGroup.renderOrder = 7;
+      this.overlayGroup.add(this.predGroup);
+      this.predMats = {};
+      this.predDot = new THREE.SphereGeometry(0.07, 10, 8);
+    }
+    this.predGroup.visible = visible;
+    const pred = t.prediction;
+    if (!visible || !pred || pred === this.predSource) return;
+    this.predSource = pred;
+    for (const c of [...this.predGroup.children]) {
+      this.predGroup.remove(c);
+      if (c.geometry && c.geometry !== this.predDot) c.geometry.dispose();
+    }
+    const mat = (risk, kind) => {
+      const key = `${risk}-${kind}`;
+      if (!this.predMats[key]) {
+        const color = new THREE.Color({ LOW: '#7fe3d9', MEDIUM: '#ffd166', HIGH: '#ff6b5e' }[risk] || '#7fe3d9');
+        this.predMats[key] =
+          kind === 'line'
+            ? new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.95, depthWrite: false })
+            : new THREE.MeshBasicMaterial({ color, transparent: true, opacity: kind === 'ring' ? 0.9 : 0.85, depthWrite: false, side: THREE.DoubleSide });
+      }
+      return this.predMats[key];
+    };
+    for (const tr of pred.tracks || []) {
+      const r = Math.max(tr.radius, 0.2);
+      const ring = new THREE.Mesh(new THREE.RingGeometry(r + 0.05, r + 0.12, 32), mat(tr.risk, 'ring'));
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.set(tr.x, 0.03, -tr.y);
+      this.predGroup.add(ring);
+      if (!tr.moving) continue;
+      const pts = [S(tr.x, tr.y, 0.05), ...tr.predicted.map((p) => S(p.x, p.y, 0.05))];
+      this.predGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), mat(tr.risk, 'line')));
+      for (const p of tr.predicted) {
+        const dot = new THREE.Mesh(this.predDot, mat(tr.risk, 'dot'));
+        dot.position.set(p.x, 0.07, -p.y);
+        this.predGroup.add(dot);
+        const unc = new THREE.Mesh(new THREE.RingGeometry(r + p.sigma - 0.02, r + p.sigma, 28), mat(tr.risk, 'ring'));
+        unc.rotation.x = -Math.PI / 2;
+        unc.position.set(p.x, 0.02, -p.y);
+        this.predGroup.add(unc);
+      }
+    }
+    for (const c of pred.conflicts || []) {
+      for (const angle of [Math.PI / 4, -Math.PI / 4]) {
+        const bar = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.03, 0.08), mat('HIGH', 'dot'));
+        bar.position.set(c.x, 0.06, -c.y);
+        bar.rotation.y = angle;
+        this.predGroup.add(bar);
+      }
+    }
+    this.dirty = true;
+  }
+
   /** Apply one frame of interpolated state. */
   update(state, opts, now) {
     const { layers, effects, rejected, selectedObstacle, anim } = opts;
@@ -980,6 +1038,7 @@ export class Sim3D {
     this.footprint.material.opacity = ringColor ? 0.9 : 0;
     if (ringColor) this.footprint.material.color.set(ringColor);
     this._syncLidar(t, layers.lidar);
+    this._syncPredictions(t, layers.predict);
 
     if (this.mode === 'follow') {
       const target = new THREE.Vector3(pose.x, 0, -pose.y);

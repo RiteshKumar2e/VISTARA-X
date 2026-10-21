@@ -68,6 +68,27 @@ def _enclosed() -> World:
     return World(MAP_W, MAP_H, robot, obstacles)
 
 
+def _crossing() -> World:
+    # A corridor between two walls with doorways at x = 10. A person who does not give
+    # way crosses the corridor through the doorways (and disappears behind the walls,
+    # so its track is lost and re-acquired); a cart drives a rectangular loop, changing
+    # direction at each corner and crossing the route twice; a crate stands on the
+    # direct route.
+    obstacles = [
+        _rect("wall-nw", "barrier", 4.75, 9.15, 9.5, 0.3, height=2.0),
+        _rect("wall-ne", "barrier", 15.25, 9.15, 9.5, 0.3, height=2.0),
+        _rect("wall-sw", "barrier", 4.75, 2.85, 9.5, 0.3, height=2.0),
+        _rect("wall-se", "barrier", 15.25, 2.85, 9.5, 0.3, height=2.0),
+        _rect("crate-1", "crate", 4.5, 6.0, 0.8, 0.8, height=1.0),
+        Obstacle(id="person-1", label="person", shape="circle", x=10.0, y=11.5, r=0.3, height=1.75, dynamic=True,
+                 patrol=[(10.0, 11.5), (10.0, 0.5)], speed=0.6, yields=False),
+        Obstacle(id="cart-1", label="cart", shape="rect", x=14.0, y=8.4, w=0.7, h=0.7, height=1.0, dynamic=True,
+                 patrol=[(14.0, 8.4), (14.0, 3.6), (17.5, 3.6), (17.5, 8.4)], speed=0.5, yields=False),
+    ]
+    robot = RobotState(x=1.5, y=6.0, theta=0.0)
+    return World(MAP_W, MAP_H, robot, obstacles)
+
+
 @dataclass(frozen=True)
 class Place:
     """A named destination users can ask for by voice or text. ``aliases`` are matched
@@ -130,6 +151,20 @@ SCENARIOS: dict[str, Scenario] = {
                       ("loading bay", "loading dock", "loading", "लोडिंग")),
                 Place("exit", "Exit", "निकास", 18.5, 6.0,
                       ("exit", "way out", "bahar", "nikas", "nikaas", "निकास", "बाहर", "एग्जिट", "एक्जिट")),
+            ),
+        ),
+        Scenario(
+            "crossing",
+            "Predictive crossing",
+            "A person who does not give way crosses the robot's corridor, a cart changes direction, a crate blocks the direct line.",
+            (18.5, 6.0),
+            _crossing,
+            (
+                Place("start", "Starting point", "शुरुआत", 1.5, 6.0, START_ALIASES),
+                Place("exit", "Exit", "निकास", 18.5, 6.0,
+                      ("exit", "way out", "bahar", "nikas", "nikaas", "निकास", "बाहर", "एग्जिट", "एक्जिट")),
+                Place("midpoint", "Corridor midpoint", "गलियारे का बीच", 12.0, 6.0,
+                      ("midpoint", "middle", "corridor", "beech", "गलियारा", "बीच")),
             ),
         ),
         Scenario(

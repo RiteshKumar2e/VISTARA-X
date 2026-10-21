@@ -196,6 +196,11 @@ class PerceptionService:
         with self._lock:
             return self.observed.seen.copy()
 
+    def camera_tracks(self, now: float) -> list[dict]:
+        """Camera-derived tracks (label + world position), for labelling LiDAR tracks."""
+        with self._lock:
+            return self.tracker.snapshot(now)
+
     def snapshot(self, sim_time: float | None = None) -> dict:
         with self._lock:
             now = sim_time if sim_time is not None else (self.frame_sim_time or 0.0)

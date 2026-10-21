@@ -3,7 +3,9 @@ import { Link } from 'react-router-dom';
 import { AlertCentre, useA11ySettings } from '../components/AlertCentre';
 import { ChallengePanel } from '../components/ChallengePanel';
 import { CommandConsole } from '../components/CommandConsole';
+import { EvaluationPanel } from '../components/EvaluationPanel';
 import { MappingPanel } from '../components/MappingPanel';
+import { PredictionPanel } from '../components/PredictionPanel';
 import { EventLog } from '../components/EventLog';
 import { GuidedDemo } from '../components/GuidedDemo';
 import { MissionControls } from '../components/MissionControls';
@@ -251,6 +253,7 @@ export default function Dashboard() {
             selectedObstacle={selectedObstacle}
             lite={lite}
           />
+          <PredictionPanel telemetry={telemetry} online={online} command={command} />
           <MappingPanel telemetry={telemetry} online={online} command={command} />
           <div className="split">
             <TelemetryPanel telemetry={telemetry} connection={connection} />
@@ -260,6 +263,7 @@ export default function Dashboard() {
             <SensorsPanel telemetry={telemetry} command={command} online={online} />
             <NavigationPanel telemetry={telemetry} online={online} />
           </div>
+          <EvaluationPanel online={online} />
           <div className="split">
             <ModelsPanel telemetry={telemetry} command={command} online={online} />
           </div>

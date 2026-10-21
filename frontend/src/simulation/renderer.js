@@ -300,6 +300,78 @@ function drawRobot(ctx, view, pose, pal, wheelPhase, warning) {
   ctx.restore();
 }
 
+export const RISK_COLOURS = { LOW: '#7fe3d9', MEDIUM: '#ffd166', HIGH: '#ff6b5e' };
+
+/** LiDAR tracks with velocity and predicted positions (0.5/1/2/3 s) plus uncertainty. */
+function drawPredictions(ctx, view, pred, narrow) {
+  const { X, Y, scale } = view;
+  ctx.save();
+  for (const tr of pred.tracks || []) {
+    const col = RISK_COLOURS[tr.risk] || RISK_COLOURS.LOW;
+    const uncertain = tr.state !== 'confirmed';
+    ctx.strokeStyle = col;
+    ctx.fillStyle = col;
+    ctx.setLineDash(uncertain ? [4, 4] : []);
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(X(tr.x), Y(tr.y), Math.max(tr.radius * scale, 6), 0, Math.PI * 2);
+    ctx.stroke();
+    if (tr.moving) {
+      // Predicted centre line and uncertainty circles.
+      ctx.beginPath();
+      ctx.moveTo(X(tr.x), Y(tr.y));
+      for (const p of tr.predicted) ctx.lineTo(X(p.x), Y(p.y));
+      ctx.stroke();
+      ctx.setLineDash([3, 4]);
+      ctx.lineWidth = 1;
+      ctx.globalAlpha = 0.8;
+      for (const p of tr.predicted) {
+        ctx.beginPath();
+        ctx.arc(X(p.x), Y(p.y), Math.max((tr.radius + p.sigma) * scale, 4), 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+      for (const p of tr.predicted) {
+        ctx.beginPath();
+        ctx.arc(X(p.x), Y(p.y), 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.setLineDash([]);
+    if (!narrow) {
+      ctx.font = '11px -apple-system, "Segoe UI", sans-serif';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      const label = `T${tr.id} ${tr.label}${tr.moving ? ` ${tr.speed.toFixed(1)} m/s` : ''}${uncertain ? ' (uncertain)' : ''}`;
+      ctx.fillStyle = 'rgba(15,18,20,0.75)';
+      const w = ctx.measureText(label).width + 8;
+      ctx.fillRect(X(tr.x) + 8, Y(tr.y) + 6, w, 16);
+      ctx.fillStyle = col;
+      ctx.fillText(label, X(tr.x) + 12, Y(tr.y) + 8);
+    }
+  }
+  for (const c of pred.conflicts || []) {
+    const cx = X(c.x);
+    const cy = Y(c.y);
+    ctx.strokeStyle = RISK_COLOURS.HIGH;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(cx - 7, cy - 7);
+    ctx.lineTo(cx + 7, cy + 7);
+    ctx.moveTo(cx + 7, cy - 7);
+    ctx.lineTo(cx - 7, cy + 7);
+    ctx.stroke();
+    if (!narrow) {
+      ctx.font = 'bold 11px -apple-system, "Segoe UI", sans-serif';
+      ctx.fillStyle = RISK_COLOURS.HIGH;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'bottom';
+      ctx.fillText(`conflict in ${c.t.toFixed(1)} s`, cx + 9, cy - 4);
+    }
+  }
+  ctx.restore();
+}
+
 export function drawScene(ctx, view, world, state, opts) {
   const { pal, layers, explored, now, anim, effects, rejected, selectedObstacle } = opts;
   const { X, Y, scale, m, narrow, cssWidth, cssHeight } = view;
@@ -570,6 +642,7 @@ export function drawScene(ctx, view, world, state, opts) {
         ctx.fillRect(X(rp.x + range * Math.cos(a)) - 1.5, Y(rp.y + range * Math.sin(a)) - 1.5, 3, 3);
       }
     }
+    if (layers.predict && t.prediction) drawPredictions(ctx, view, t.prediction, narrow);
     const prox = t.sensors?.proximity?.action;
     drawRobot(ctx, view, pose, pal, anim.wheelPhase, t.safety?.warning || prox === 'stop');
   }

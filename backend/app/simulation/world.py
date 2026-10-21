@@ -30,6 +30,8 @@ class Obstacle:
     patrol: list[tuple[float, float]] = field(default_factory=list)
     speed: float = 0.0
     patrol_index: int = 0
+    # People and carts that do not give way walk their route even if the robot is in it.
+    yields: bool = True
 
     @property
     def moving(self) -> bool:
@@ -78,6 +80,7 @@ class Obstacle:
             patrol=list(self.patrol),
             speed=self.speed,
             patrol_index=self.patrol_index,
+            yields=self.yields,
         )
 
 

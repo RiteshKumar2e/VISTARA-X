@@ -12,6 +12,7 @@ const ALERTS = {
   error: ['danger', 'System error: robot halted'],
   goal_reached: ['success', 'Destination reached'],
   explore: ['info', 'Mapping'],
+  prediction: ['warning', 'Predicted conflict'],
 };
 const ICON = { danger: WarningIcon, warning: WarningIcon, success: CheckIcon, info: InfoIcon };
 const DURATIONS = [
@@ -78,7 +79,12 @@ export function AlertCentre({ telemetry, settings }) {
     setAlerts((a) =>
       [
         ...fresh.reverse().map((e) => {
-          const [level, title] = e.type === 'explore' && e.level === 'success' ? ['success', 'Mapping finished'] : ALERTS[e.type];
+          const [level, title] =
+            e.type === 'explore' && e.level === 'success'
+              ? ['success', 'Mapping finished']
+              : e.type === 'prediction' && e.level !== 'warning'
+                ? ['info', 'Predictive speed change']
+                : ALERTS[e.type];
           return { id: e.id, level, title, message: e.message, at: Date.now(), sim: e.sim_time };
         }),
         ...a,

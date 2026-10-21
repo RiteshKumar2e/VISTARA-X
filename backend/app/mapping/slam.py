@@ -24,7 +24,7 @@ from .occupancy import OCCUPIED, LogOddsMap
 MATCH_SIGMA = 0.10  # m: likelihood-field spread around mapped obstacles
 MIN_OCCUPIED_FOR_MATCH = 40  # mapped obstacle cells needed before scan matching is trusted
 MIN_MATCH_SCORE = 0.25  # mean likelihood below which a match is rejected (poor overlap)
-MAX_MATCH_POINTS = 120
+MAX_MATCH_POINTS = 60
 TRAJECTORY_STEP = 0.10  # m between stored trajectory points
 MAX_TRAJECTORY = 2000
 
@@ -51,7 +51,7 @@ def relative(a, b):
 class ScanMatcher:
     """Coarse-to-fine exhaustive search over (dx, dy, dtheta) on a likelihood field."""
 
-    def __init__(self, xy_window=0.16, xy_step=0.04, th_window=math.radians(4), th_step=math.radians(1)):
+    def __init__(self, xy_window=0.12, xy_step=0.04, th_window=math.radians(3), th_step=math.radians(1)):
         self.xy = np.arange(-xy_window, xy_window + 1e-9, xy_step)
         self.th = np.arange(-th_window, th_window + 1e-9, th_step)
         self._field = None

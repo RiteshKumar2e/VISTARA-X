@@ -659,3 +659,29 @@ def test_accessible_mode_and_visual_blocked_alert(page):
     expect(banner).to_contain_text("blocked", ignore_case=True, timeout=20000)
     page.get_by_label("Accessible mode").uncheck()
     assert not page.evaluate("document.documentElement.classList.contains('a11y-large')")
+
+
+def test_predictive_demo_and_baseline_toggle(page):
+    open_console(page)
+    page.get_by_role("button", name="Run predictive demo").click()
+    wait_backend(page, lambda t: t["scenario"] == "crossing" and t["mission"]["status"] in ("planning", "navigating"), timeout=60)
+    demo = page.locator(".predictive-demo")
+    expect(demo.locator(".steps")).to_be_visible(timeout=20000)
+    # Each step is ticked only from live telemetry.
+    expect(demo.locator(".step-done")).to_have_count(3, timeout=90000)
+    expect(page.locator("#prediction .risk-card")).to_be_visible()
+    expect(page.locator("#prediction table")).to_contain_text("T")
+    expect(demo.locator(".step-done")).to_have_count(4, timeout=120000)
+    t = telemetry(page)
+    assert t["scenario"] == "crossing" and t["mission"]["status"] == "goal_reached"
+    assert t["safety"]["collisions"] == 0
+    assert t["prediction"]["metrics"]["prediction_samples"] > 0
+    toggle = page.locator("#prediction").get_by_label("Predictive avoidance")
+    # The checkbox mirrors backend state, so it flips only after telemetry confirms it.
+    toggle.click()
+    wait_backend(page, lambda t: t["params"]["predictive"] is False, timeout=10)
+    expect(toggle).not_to_be_checked()
+    expect(page.locator("#prediction .risk-card")).to_contain_text("reactive baseline")
+    toggle.click()
+    wait_backend(page, lambda t: t["params"]["predictive"] is True, timeout=10)
+    assert not page.errors, page.errors

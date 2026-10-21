@@ -2,9 +2,11 @@
 
 **Vision-Based Autonomous Navigation System** — *Beyond Seeing. Into Understanding.*
 
-VISTARA-X is a simulation-first autonomous robotics platform. A simulated robot maps its surroundings with LiDAR-based SLAM, understands spoken or typed commands in English and Hindi, plans a collision-free route with A\*, follows it with a pure-pursuit controller, and replans in real time when obstacles block its path. Every step can be operated without audio. A React dashboard visualises the live mission using authoritative telemetry streamed from a FastAPI backend.
+VISTARA-X is a simulation-first **predictive** autonomous navigation system. It does not only react to obstacles once they block the way: it tracks moving objects, predicts where they will be in the next few seconds, estimates whether they will conflict with the robot's planned route, and slows down, waits or chooses another route *before* the conflict happens. The simulated robot also maps its surroundings with LiDAR-based SLAM, understands spoken or typed commands in English and Hindi, plans a collision-free route with A\*, follows it with a pure-pursuit controller, and replans in real time when obstacles block its path. Every step can be operated without audio. A React dashboard visualises the live mission using authoritative telemetry streamed from a FastAPI backend.
 
-> **Mission:** Understand the environment, understand the user's intention, and navigate safely toward the requested destination.
+> **VISTARA-X doesn't just detect obstacles. It predicts potential navigation conflicts and plans ahead.**
+>
+> Mission: understand the environment, understand the user's intention, and navigate safely toward the requested destination. No collision avoidance can be guaranteed; the results below are measured in simulation only.
 
 ---
 
@@ -15,6 +17,8 @@ VISTARA-X is a simulation-first autonomous robotics platform. A simulated robot 
 - [Architecture](#architecture)
 - [Getting started](#getting-started)
 - [Configuration](#configuration)
+- [Predictive navigation](#predictive-navigation)
+- [Evaluation](#evaluation)
 - [Mapping and localisation](#mapping-and-localisation)
 - [Voice and text commands](#voice-and-text-commands)
 - [Accessibility](#accessibility)
@@ -32,7 +36,7 @@ VISTARA-X is a simulation-first autonomous robotics platform. A simulated robot 
 
 Autonomous robots must understand their surroundings, identify relevant objects and people, navigate toward an objective, and avoid obstacles in real time. VISTARA-X implements this as one continuous loop:
 
-**Observe → Detect → Understand → Decide → Plan → Move → Monitor → Replan**
+**Observe → Detect → Track → Predict → Assess risk → Decide → Plan → Move → Monitor → Replan**
 
 The system runs entirely in simulation, with module boundaries designed for later integration of real cameras, depth sensors, LiDAR and motor controllers.
 
@@ -53,6 +57,8 @@ The system runs entirely in simulation, with module boundaries designed for late
 | Telemetry | Versioned WebSocket stream with sequence numbers and bounded queues | Implemented |
 | 3D digital twin | Three.js warehouse (racking, pallets, crates, barriers, person), differential-drive robot with wheels, casters and camera mast, LiDAR points, route ribbons, orbit/top/follow cameras; 2D plan view and automatic fallback | Implemented |
 | Dashboard | Mission overview with quick controls and health, simulator, controls, perception, sensors, navigation (occupancy grid, route validity, replanning history), telemetry, event log, system health, guided and blocked-route demos | Implemented |
+| Predictive navigation | LiDAR object extraction against a prior map, constant-velocity Kalman multi-object tracking with stable IDs, 0.5/1/2/3 s predictions with uncertainty, rule-based LOW/MEDIUM/HIGH conflict risk and time to conflict, sampling-based predictive speed choice (continue/slow/crawl/wait), replanning around predicted paths, reactive-baseline switch | Implemented (simulated sensors) |
+| Evaluation | `python -m app.evaluation`: 9 crossing variants × predictive/reactive, plus 7 scenario checks; results in `backend/evaluation/` and the dashboard | Implemented |
 | Mapping and localisation | Log-odds occupancy mapping from the simulated LiDAR; wheel-odometry prediction corrected by correlative scan matching (2D SLAM); autonomous frontier exploration; planning on the live SLAM map or an imported map | Implemented (simulated sensors); ROS 2 live SLAM not set up |
 | Map files | Save, load, export and import maps in ROS map_server format (PGM + YAML) | Implemented |
 | Voice and text commands | English, Hindi and Hinglish; local Whisper speech recognition; deterministic intent parser; named destinations; validation and confirmation before moving; spoken and written responses | Implemented |
@@ -74,7 +80,9 @@ The system runs entirely in simulation, with module boundaries designed for late
 │  ├─ occupancy grid + A*          ├─ YOLOv8 / fallback     │
 │  ├─ pure-pursuit controller      ├─ model registry + NMS  │
 │  ├─ simulated sensor suite       └─ scene understanding   │
-│  ├─ SLAM: scan matching + map    Request threads          │
+│  ├─ LiDAR tracking + prediction  Request threads          │
+│  ├─ risk + predictive decision                            │
+│  ├─ SLAM: scan matching + map                             │
 │  ├─ frontier exploration         ├─ command parser        │
 │  └─ PyBullet collision checks    └─ Whisper speech-to-text│
 └───────────────────────────────────────────────────────────┘
@@ -145,6 +153,9 @@ Interactive reference at `http://localhost:8000/docs` (development). All respons
 | `GET /places` | Named destinations of the current scenario with Hindi names and aliases |
 | `POST /commands/interpret` · `/commands/{id}/confirm` · `/cancel`, `GET /commands` | Command pipeline and transcript history |
 | `GET /speech/status`, `POST /speech/load`, `POST /speech/transcribe?language=en\|hi` | Whisper status, model warm-up, transcription of a raw audio body |
+| `POST /simulation/config {"predictive": true\|false}` | Predictive avoidance on, or off (reactive baseline) |
+| `GET /evaluation` | Results of the last `python -m app.evaluation` run |
+| Telemetry `prediction` | Tracks (ID, class, state, velocity, confidence, predicted positions with sigma), risk, time to conflict, action, reason, conflict points, metrics |
 | `POST /models/select`, `POST /sensors/configure`, `POST /perception/config` | Model policy, sensor settings, frame processing |
 | `WS /ws/telemetry` | Versioned state stream at 10 Hz with sequence numbers |
 
@@ -185,6 +196,79 @@ cp frontend/.env.example frontend/.env
 | `VISTARA_MAPS_DIR` | `backend/maps` | Where saved maps (PGM + YAML) are stored |
 | `VISTARA_WHISPER_MODEL` | `base` | Whisper size: `tiny`, `base`, `small`, `medium` |
 
+## Predictive navigation
+
+The robot handles a moving obstacle in four stages:
+
+1. **Detect.** Each 10 Hz LiDAR scan is compared with the *prior map of fixed structures* (the walls and racking known when the scenario loads, as a building map would be). Returns that do not lie on a known structure are split into objects by scan segmentation. Each object's centroid is pushed away from the sensor by half its visible width, because a LiDAR sees only the near side of an object.
+2. **Track.** Every object gets its own constant-velocity Kalman filter, with state *(x, y, vx, vy)*, 1 m/s² process noise and 0.10 m measurement noise.
+   - **Association:** greedy nearest-neighbour inside a gate that widens with the track's uncertainty.
+   - **Lifecycle:** a track is *tentative* until seen 3 times. It is *coasting* (uncertain) after 0.25 s without a measurement, for example behind a wall, and *lost* after 1.5 s.
+   - **Class:** a nearby camera track supplies the class (for example *person*) when the camera sees the object.
+3. **Predict.** Positions at 0.5, 1, 2 and 3 s ahead come from the filter state. The uncertainty σ(t) combines the filter covariance with a pedestrian-like random acceleration of 0.35 m/s², capped at 0.5 m. These predictions are drawn in the plan view and the 3D view.
+4. **Assess and decide.** The robot's own motion is rolled out along its route in 0.1 s steps for 3 s. A conflict occurs at time *t* when the robot and the object come closer than *robot radius + object radius + safety margin + σ(t)*.
+   - **Risk** is set by fixed rules:
+     - **HIGH:** a conflict is predicted within 1.5 s.
+     - **MEDIUM:** a conflict is predicted within 3 s, or an uncertain track is within 1.5 m of the route ahead.
+     - **LOW:** neither.
+   - **Time to conflict** is shown only for confirmed, moving tracks with confidence ≥ 0.3.
+   - **Decision:** the speeds 100%, 50%, 25% and 0% are each rolled out, and the fastest one with no predicted conflict is chosen. A lower speed is held for at least 0.6 s.
+   - **Replanning:** if even waiting conflicts (the object is heading for the robot), or the robot has waited 2.5 s, A\* replans with the cells the object is predicted to sweep in the next 2.5 s blocked. The new route is accepted only if it is validated and no longer than 1.8× the old one.
+   - **Reason text:** each decision is written out, for example *Predicted path conflict with track 3 (person) in 1.8 s: slowing to 50%*.
+
+**What this is not:**
+
+- The risk level is a rule-based estimate from a simple motion model, not a probability of collision.
+- The decision step is a sampling-based speed planner, not model-predictive control.
+- Constant-velocity prediction is least accurate when an object turns.
+- The predictive layer sits on top of the reactive safety layers (route-obstruction check, LiDAR/ultrasonic proximity stop, ground-truth veto), which stay active. Collision safety never depends on YOLO, speech recognition or a language model.
+
+**Scenario** `crossing` (Predictive crossing):
+
+- **Walls:** a corridor between two walls with doorways at x = 10.
+- **Person:** walks across the robot's route through the doorways and does **not** give way. Behind the walls it is out of LiDAR view, so its track turns uncertain and is then lost.
+- **Cart:** drives a rectangular loop that changes direction at every corner and crosses the route twice.
+- **Crate:** stands on the direct line.
+
+Switch **Predictive avoidance** off in the Prediction panel, or send `POST /simulation/config {"predictive": false}`, to run the same robot as the reactive baseline. The prediction panel then keeps tracking and scoring but does not act.
+
+## Evaluation
+
+Run `python -m app.evaluation` from `backend/`. It takes about 3–5 minutes on a laptop CPU and writes [backend/evaluation/results.md](backend/evaluation/results.md) and `results.json`. The dashboard's *Evaluation* panel shows the latest results.
+
+Latest run: generated 2026-10-21 07:40:56+00:00 on the development laptop, in 327.4 s. The scenario is `crossing`, with 9 variants (the person walks at 0.6, 0.9 or 1.2 m/s and starts 0, 4 or 8 s early), each run once in each mode:
+
+| Metric | Predictive | Reactive baseline |
+|---|---|---|
+| Goal completion | 9/9 | 7/9 |
+| Collisions (total) | 0 | 2 |
+| Near misses (< 0.25 m) | 0 | 3 |
+| Closest approach to a moving obstacle, worst run | 0.329 m | -0.033 m |
+| Closest approach, mean | 1.329 m | 1.007 m |
+| Task duration, mean (completed runs) | 26.23 s | 24.94 s |
+| Path length, mean | 17.54 m | 17.43 m |
+| Replans per run, mean | 3.11 | 2.56 |
+| 1 s prediction error, mean | 0.202 m | 0.202 m |
+
+What the comparison shows:
+
+- **Collisions:** in 2 of the 9 runs, the reactive robot was struck by the person, who does not give way. The robot stopped for the obstacle in front of it, but a stop does not stop someone walking into it. The predictive robot slowed or waited before the person's line and kept its distance in all 9 runs.
+- **Cost:** about 1.3 s more per mission and slightly more replans.
+- **Prediction error:** the 1 s error is similar in both modes because the same tracker runs in both.
+- **Scope:** these results come from one simulated scenario family with scripted motion. They are not a statistical safety claim.
+
+All 7 scenario checks passed:
+
+- static obstacle
+- crossing person
+- turning cart
+- lost track
+- route blocked after start
+- Hinglish text command
+- unreachable destination
+
+The per-run table and details are in [results.md](backend/evaluation/results.md).
+
 ## Mapping and localisation
 
 All mapping in this prototype is **simulation-generated**: the inputs are the simulated LiDAR and wheel odometry, and the result is labelled as such in the dashboard and API.
@@ -198,7 +282,7 @@ All mapping in this prototype is **simulation-generated**: the inputs are the si
 
 There is no loop closure, so error can still grow on very long runs. Measured on a 14-goal loop in the warehouse (2,212 scans): the SLAM pose error stayed between 8 and 10 cm (maximum 19 cm), while odometry alone drifted to 140 cm.
 
-**Exploration.** *Explore and map automatically* drives the robot to frontiers (free cells next to unknown cells) on the SLAM map until none are reachable. In the warehouse it maps about 83–90% of the area in about 30 s of simulated time with no collisions.
+**Exploration.** *Explore and map automatically* drives the robot to frontiers (free cells next to unknown cells) on the SLAM map. It stops when no frontier is reachable or when the last four frontiers added less than 1% coverage. In the warehouse it stops at about 90% of the area after 75–80 s of simulated time, with no collisions (measured with and without the patrolling person).
 
 ### Mapping modes
 
@@ -349,25 +433,25 @@ The end-to-end suite accepts `E2E_BACKEND_URL` and `E2E_FRONTEND_URL` to target 
 
 ## Judge demonstration guide
 
-No code edits are needed. Start both applications (see *Getting started*) and open `http://localhost:5173/mission`. On a slower laptop, tick **Demo mode** in the mission overview. Before the demo, click **Speak a command** once so the Whisper model is loaded.
+No code edits are needed. Start both applications (Windows: `backend\start.bat` and `frontend\start.bat`, or see *Getting started*), open `http://localhost:5173/mission`, and tick **Demo mode** on a slower laptop.
 
-| # | Action | What to verify | Uses |
-|---|---|---|---|
-| 1 | Open the console; the warehouse 3D environment loads. | Racking, pallets, a patrolling person, the robot at (1.5, 6.0); the HUD shows map %, SLAM quality and pose error. | Simulation |
-| 2 | Mapping panel: click **Explore and map automatically** (or load the documented map: *Save, load…* > `warehouse_demo` > **Load**). | The robot drives to frontiers; the map fills in (free, occupied, unknown); the estimated trajectory follows the true one; *Exploration finished* at about 83–90%. | Simulated LiDAR and odometry, SLAM; or imported map |
-| 3 | Inspect the map. | Occupancy grid, robot pose and heading, trajectory, latest scan (orange), localisation *Good*, pose error in cm, resolution 0.1 m, origin (0, 0). | Simulation |
-| 4 | Commands panel: type **Robot ko reception tak le jao** (or press **Speak a command** and say it, or say *Take the robot to the storage room*). | — | Text, or local Whisper |
-| 5 | Read the command card. | Transcript, language (*Hinglish* / *Hindi* / *English*), intent, resolved destination with coordinates, *Route found, N m*, robot response in the same language. Nothing moves yet. | Deterministic parser |
-| 6 | Click **Confirm and go**. | Status *Planning* → *Navigating*; the A\* route appears in 3D and on the map. | Simulation |
-| 7 | Click **Drop obstacle on route** (Mission controls). | The robot stops; status *Replanning*; a visual alert *Route blocked: robot stopped and replanning*; the event log names the obstacle. | Simulation, safety layers |
-| 8 | Alternative route. | A new validated route; Navigation lists the replan. | Simulation |
-| 9 | Completion. | *Destination reached* alert; status *Goal reached* within 0.2 m; collisions 0. | Simulation |
-| 10 | Accessible text-first run: open *Display and alert settings*, tick **Accessible mode**, then repeat 4–9 using only the keyboard (Tab to *Type a command*, type **Take the robot to the exit**, Enter, Tab to *Confirm and go*, Enter). | Large text, high contrast, alerts stay until dismissed; no step needs audio. | Text only |
-| 11 | Invalid and blocked destinations: type **Take the robot to the cafeteria**; then click **Run blocked-route demo**. | First: *I don't know that place. Known places: …* (no guessed location). Second: status *Blocked*, a red *No safe route* banner, 0.00 m travelled. | Parser; simulation |
+**Main demo (predictive navigation, about 1 minute):** click **Run predictive demo** in the Guided demo card. It loads the crossing corridor and drives to the exit. Each line of its checklist is ticked only from live telemetry.
 
-At any time **Emergency stop** (Commands panel) halts the robot directly. Interactive extra: click **Start challenge** in *Trap the robot* and hand the judge the mouse; three barriers across the gap at x = 15 seal the robot in (it reports *Blocked*), and fewer leave a gap it finds.
+| # | What you see | Where |
+|---|---|---|
+| 1 | The person and the cart appear as tracks (T1, T2…) with their speed; the predicted positions at 0.5/1/2/3 s are drawn with uncertainty circles, coloured by risk. | Plan or 3D view, *Prediction and risk* table |
+| 2 | Before the robot reaches the person's line, the risk turns MEDIUM or HIGH, with a time to conflict and a red conflict marker. | Risk card, viewport |
+| 3 | The robot slows or waits, and says why: *Predicted path conflict with track 1 in 2.7 s: slowing to 50%*. | Risk card, event log, alert centre |
+| 4 | The person passes, the risk returns to LOW, and the robot continues to the exit with 0 collisions. The closest approach to a moving obstacle is shown. | Risk card metrics, overview strip |
+| 5 | Untick **Predictive avoidance** and run the demo again: the reactive baseline only reacts once the obstacle is on the route. Compare in the *Evaluation* panel. | Prediction panel, Evaluation panel |
 
-Optional: add a *Person (walking)* across the route, switch the LiDAR off to see the fail-safe speed and *No LiDAR input* in the Mapping panel, or select *YOLOv8* in Detection models to run real inference on the camera frame. **Run guided demo** automates the obstacle-and-replan part.
+**Also show (each under a minute):**
+
+- **Voice or text:** in the Commands panel, type or say *Robot ko exit tak le jao*. The card shows the transcript, language, destination and route; confirm it. For the text-only run, open *Display and alert settings* > **Accessible mode** and use only the keyboard.
+- **Mapping:** in the Mapping panel, click **Explore and map automatically**, or load `warehouse_demo`.
+- **Blocked route after start:** in the warehouse, start a mission and click **Drop obstacle on route**. The robot stops, replans and continues.
+- **Unreachable destination:** click **Run blocked-route demo**. The status shows *Blocked*, the robot travels 0.00 m, and a red banner appears. Typing *take the robot to the cafeteria* gets a clarification question instead of a guessed place.
+- **Emergency stop** (Commands panel) halts the robot at any time.
 
 ### Mission states
 
@@ -377,10 +461,10 @@ Optional: add a *Person (walking)* across the route, switch the LiDAR off to see
 
 | Status | Capabilities |
 |---|---|
-| **Implemented** | A\* planning on an inflated occupancy grid, route validation, replanning state machine, pure-pursuit control, three-layer safety (grid route check, measured proximity, ground-truth veto), 2D SLAM (odometry + scan matching + log-odds map) and frontier exploration, planning on SLAM or imported maps, ROS map_server import/export, deterministic English/Hindi/Hinglish command parser with validation and confirmation, local Whisper speech recognition, emergency stop, visual alert centre and accessible mode, mission states, REST + WebSocket API, 3D/2D visualisation, model registry and fusion, guided and blocked demos, trap-the-robot challenge, automated tests |
+| **Implemented** | LiDAR tracking with Kalman filters, motion prediction with uncertainty, rule-based conflict risk and time to conflict, predictive speed and route decisions with reasons, reactive-baseline comparison and evaluation script, A\* planning on an inflated occupancy grid, route validation, replanning state machine, pure-pursuit control, three-layer safety (grid route check, measured proximity, ground-truth veto), 2D SLAM (odometry + scan matching + log-odds map) and frontier exploration, planning on SLAM or imported maps, ROS map_server import/export, deterministic English/Hindi/Hinglish command parser with validation and confirmation, local Whisper speech recognition, emergency stop, visual alert centre and accessible mode, mission states, REST + WebSocket API, 3D/2D visualisation, model registry and fusion, guided and blocked demos, trap-the-robot challenge, automated tests |
 | **Simulated** | All sensors (camera, depth, LiDAR, ultrasonic, IMU, odometry), and therefore every SLAM map built here; robot motion (kinematic), people and obstacles, PyBullet collision checks and rendering |
 | **Unavailable here** | Real hardware; ROS 2 live SLAM (not installed); GPU inference; a Hindi text-to-speech voice on the development machine |
-| **Future** | ROS 2 bridge (SLAM Toolbox + Nav2) and real sensors, loop closure, real RGB-D camera and motor-controller integration, sign-language recognition, vision-language objectives, multi-robot coordination |
+| **Future** | Learned trajectory prediction (needs real motion data), model-predictive control, ROS 2 bridge (SLAM Toolbox + Nav2) and real sensors, loop closure, real RGB-D camera and motor-controller integration, sign-language recognition, vision-language objectives, multi-robot coordination |
 
 ## Limitations and roadmap
 
@@ -388,6 +472,8 @@ Optional: add a *Person (walking)* across the route, switch the LiDAR off to see
 
 - All operation is simulated; no physical robot or sensors are connected.
 - The planner uses simulator geometry by default and can plan on the SLAM or an imported map; the final safety veto always uses simulator geometry. Camera detections are used for visualisation and the person-proximity speed limit only.
+- Motion prediction assumes constant velocity over 3 s; it is least accurate when an object turns or stops. Object extraction depends on a prior map of fixed structures. The risk level is a rule-based estimate, not a collision probability. The predictive decision is a sampling-based speed choice plus replanning, not MPC.
+- Evaluation numbers come from one simulated scenario family with scripted obstacle motion; they are not evidence of real-world safety.
 - SLAM has no loop closure; its error is measured only in simulation (against ground truth). It has never run on real sensor data.
 - Speech recognition runs on the CPU (about 3–6 s per command with `base`). English speech was tested with synthetic (TTS) audio; Hindi speech recognition has not been tested with recorded Hindi speech because no Hindi voice or recording was available. Hindi text commands are tested.
 - The command parser understands the listed phrasings and place names, not arbitrary language; anything else is answered with a clarification request.
@@ -402,7 +488,7 @@ Optional: add a *Person (walking)* across the route, switch the LiDAR off to see
 
 **Roadmap**
 
-1. **Intelligent simulation** — current prototype.
+1. **Intelligent simulation** — current prototype, including predictive avoidance.
 2. **Real-world prototype** — RGB/depth cameras, motor-controller integration, sim-to-real validation.
 3. **Advanced perception** — ROS 2 SLAM on real LiDAR, loop closure, multi-sensor fusion, vision-language models.
 4. **Scalable autonomy** — natural-language objectives, multi-robot coordination, real-world deployment.

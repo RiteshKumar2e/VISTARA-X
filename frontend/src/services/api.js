@@ -86,6 +86,7 @@ export const api = {
   loadMap: (name) => request('post', '/mapping/load', { name }),
   importMap: (name, yaml, pgmBase64) => request('post', '/mapping/import', { name, yaml, pgm_base64: pgmBase64 }),
   exportUrl: (file) => `${API_BASE_URL}/mapping/export?file=${file}`,
+  evaluation: () => request('get', '/evaluation'),
   // Places, commands and speech
   places: () => request('get', '/places'),
   interpret: (text, source = 'text', { trusted = false, speech = null } = {}) =>

@@ -50,6 +50,65 @@ function BlockedDemo({ telemetry, command, online }) {
   );
 }
 
+/** The Round 2 predictive demo: every step is ticked only from live telemetry. */
+function PredictiveDemo({ telemetry, command, online }) {
+  const [seen, setSeen] = useState(null); // null = not started
+  const p = telemetry?.prediction;
+  const m = telemetry?.mission;
+
+  useEffect(() => {
+    if (!seen || !p || telemetry.scenario !== 'crossing') return;
+    const next = { ...seen };
+    if (p.tracks.some((t) => t.moving && t.state === 'confirmed')) next.tracked = next.tracked || 'yes';
+    if (p.ttc != null && (p.risk === 'MEDIUM' || p.risk === 'HIGH') && !next.predicted) next.predicted = `${p.risk}: ${p.reason}`;
+    if (['slow', 'crawl', 'wait', 'stop'].includes(p.action) && !next.acted) next.acted = p.reason;
+    if (m?.status === 'goal_reached' && !next.done) next.done = `${m.elapsed.toFixed(1)} s, collisions ${telemetry.safety.collisions}`;
+    if (JSON.stringify(next) !== JSON.stringify(seen)) setSeen(next);
+  }, [telemetry]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const run = async () => {
+    setSeen(null);
+    for (const step of [() => api.reset('crossing'), () => api.configure({ predictive: true }), () => api.setTarget(18.5, 6), () => api.navigate()]) {
+      if (!(await command.run('predictive-demo', step, null))) return;
+    }
+    setSeen({});
+  };
+  const steps = [
+    ['tracked', 'A moving obstacle is detected by LiDAR and tracked'],
+    ['predicted', 'A future route conflict is predicted (risk and time to conflict)'],
+    ['acted', 'A safer movement is chosen, with the reason shown'],
+    ['done', 'The robot continues and reaches the destination'],
+  ];
+  return (
+    <div className="blocked-demo predictive-demo">
+      <h3>Predictive crossing scenario</h3>
+      <p className="muted small">
+        Loads the crossing corridor (a person who does not give way, a cart that turns) and drives to the exit with predictive
+        avoidance on.
+      </p>
+      <button type="button" className="btn btn-primary" disabled={!online || !!command.pending} onClick={run}>
+        Run predictive demo
+      </button>
+      {seen && (
+        <ol className="steps" aria-live="polite">
+          {steps.map(([key, title], i) => (
+            <li key={key} className={`step step-${seen[key] ? 'done' : 'todo'}`}>
+              <span className="step-mark" aria-hidden="true">{seen[key] ? '✓' : i + 1}</span>
+              <div>
+                <p className="step-title">
+                  {title}
+                  <span className="sr-only">{seen[key] ? ' (confirmed from telemetry)' : ' (waiting)'}</span>
+                </p>
+                {seen[key] && seen[key] !== 'yes' && <p className="step-detail">{seen[key]}</p>}
+              </div>
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
+  );
+}
+
 export function GuidedDemo({ telemetry, command, online, startSignal = 0 }) {
   const [run, setRun] = useState(EMPTY_RUN);
   const [auto, setAuto] = useState(false);
@@ -228,6 +287,7 @@ export function GuidedDemo({ telemetry, command, online, startSignal = 0 }) {
           </p>
         )}
       </div>
+      <PredictiveDemo telemetry={telemetry} command={command} online={online} />
       <BlockedDemo telemetry={telemetry} command={command} online={online} />
     </section>
   );

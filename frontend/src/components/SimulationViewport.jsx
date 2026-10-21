@@ -10,6 +10,7 @@ const LAYERS = [
   ['inflation', 'Safety zones'],
   ['sensor', 'Camera overlay'],
   ['lidar', 'LiDAR scan'],
+  ['predict', 'Predictions'],
   ['trail', 'Trail'],
   ['explored', 'Unobserved cells', 'plan'],
 ];
@@ -75,7 +76,7 @@ export function SimulationViewport({
   const [webglFailed, setWebglFailed] = useState(false);
   const [hover, setHover] = useState(null);
   const [effects, setEffects] = useState(() => !prefersReducedMotion());
-  const [layers, setLayers] = useState({ route: true, inflation: true, sensor: true, lidar: true, trail: true, explored: false });
+  const [layers, setLayers] = useState({ route: true, inflation: true, sensor: true, lidar: true, predict: true, trail: true, explored: false });
   const activeView = webglFailed ? 'plan' : view;
 
   useEffect(() => store('vistara.view', view), [view]);
@@ -295,6 +296,8 @@ export function SimulationViewport({
           <li><span className="sw sw-fov" aria-hidden="true" />Camera field of view (simulated camera, {p?.camera ? `${p.camera.fov_deg}°, ${p.camera.range} m` : '70°'})</li>
           <li><span className="sw sw-detect" aria-hidden="true" />In view of the simulated detector</li>
           <li><span className="sw sw-lidar" aria-hidden="true" />Simulated LiDAR returns (orange: within slow-down distance)</li>
+          <li><span className="sw sw-predict" aria-hidden="true" />LiDAR track with predicted positions at 0.5, 1, 2, 3 s and uncertainty (colour = risk; dashed = uncertain)</li>
+          <li><span className="sw sw-conflict" aria-hidden="true">&times;</span>Predicted conflict point</li>
           <li><span className="sw sw-prox" aria-hidden="true" />Robot ring: amber slowing, red stopped</li>
           <li><span className="sw sw-track" aria-hidden="true">&times;</span>Camera-derived track</li>
         </ul>

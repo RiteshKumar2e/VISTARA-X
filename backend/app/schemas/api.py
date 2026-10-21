@@ -37,6 +37,8 @@ class ConfigRequest(StrictModel):
     max_speed: Optional[float] = Field(None, ge=0.2, le=1.5)
     safety_margin: Optional[float] = Field(None, ge=0.05, le=0.6)
     moving_obstacles: Optional[bool] = None
+    # Predictive avoidance on (default) or off (the reactive baseline).
+    predictive: Optional[bool] = None
 
 
 class ObstacleRequest(StrictModel):

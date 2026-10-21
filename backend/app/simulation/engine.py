@@ -27,6 +27,8 @@ from ..navigation.grid import OccupancyGrid
 import numpy as np
 from scipy.ndimage import label as label_regions
 from ..perception.service import PerceptionService
+from ..prediction.risk import predicted_mask
+from ..prediction.system import PredictionSystem
 from ..sensors.suite import SensorSuite
 from .physics import PYBULLET_AVAILABLE, PYBULLET_ERROR, AnalyticCollision, PyBulletCollision
 from .scenarios import DEFAULT_SCENARIO, MAP_H, MAP_W, SCENARIOS
@@ -52,6 +54,9 @@ PLANNER_MAPS = ("simulator", "slam", "imported")
 MIN_FRONTIER_CELLS = 6  # frontier clusters smaller than this (0.6 m) are ignored
 MAX_EXPLORE_GOALS = 30
 MAP_NAME = re.compile(r"^[A-Za-z0-9_-]{1,40}$")
+PRED_SPEEDUP_HOLD = 0.6  # s a lower predictive speed is held before speeding up again
+PRED_REPLAN_AFTER = 2.5  # s of waiting before trying a route around the predicted path
+PRED_REPLAN_COOLDOWN = 3.0  # s between predictive replans
 
 
 class CommandError(Exception):
@@ -81,7 +86,10 @@ class SimulationEngine:
             "safety_margin": settings.safety_margin,
             "moving_obstacles": True,
             "planner_map": "simulator",
+            "predictive": True,
         }
+        self.prediction = PredictionSystem()
+        self._extra_block = None  # temporary predicted-path cells used for one replan
         self.slam = SlamSession(MAP_W, MAP_H, SLAM_RESOLUTION)
         self.imported_map: dict | None = None  # {"map": LogOddsMap, "name", "source", "meta"}
         self.maps_dir = Path(settings.maps_dir)
@@ -205,6 +213,8 @@ class SimulationEngine:
                 occ = occ | self.sensors.lidar_occupied(self.sim_time)
             self.grid.build_from_mask(occ, unknown, self.inflation, unknown_blocked=imported)
             self._grid_source_version = (source.version, self.sensors.lidar.seq)
+        if self._extra_block is not None:
+            self.grid.blocked |= self._extra_block
         self.physics.sync(self.world.obstacles)
         self._grid_dirty = False
 
@@ -383,8 +393,9 @@ class SimulationEngine:
                 continue
             stepd = min(obs.speed * self.dt, dist)
             nx, ny = obs.x + dx / dist * stepd, obs.y + dy / dist * stepd
-            # People yield to the robot: never step into its safety bubble.
-            if math.hypot(nx - r.x, ny - r.y) < obs.r + ROBOT_RADIUS + 0.35:
+            # People normally yield to the robot and never step into its safety bubble;
+            # obstacles with yields=False keep walking (the predictive layer must avoid them).
+            if obs.yields and math.hypot(nx - r.x, ny - r.y) < obs.r + ROBOT_RADIUS + 0.35:
                 continue
             obs.x, obs.y = nx, ny
             self._grid_dirty = True
@@ -420,6 +431,15 @@ class SimulationEngine:
                 (r.x, r.y, r.theta),
                 self.sim_time,
             )
+            self.prediction.on_tick(self.world, self.sensors.lidar, self.sim_time,
+                                    lambda: self.perception.camera_tracks(self.sim_time))
+            if self.status != "navigating":
+                self.prediction.idle({
+                    "replanning": "Robot stopped while the route is replanned",
+                    "planning": "Planning a route",
+                    "blocked_waiting": "Waiting for a route to clear",
+                    "paused": "Mission paused",
+                }.get(self.status, "No active route"))
             source = self._planner_source_map()
             if source is not None and self._grid_source_version != (source.version, self.sensors.lidar.seq):
                 self._grid_dirty = True  # the map (or the live LiDAR layer) changed
@@ -533,6 +553,10 @@ class SimulationEngine:
             self._begin_replan("obstruction", name)
             return
 
+        pred_factor, waiting = self._predictive_step(r)
+        if self.status != "navigating":
+            return  # a predictive replan changed the state
+
         speed_factor = self.perception.fresh_summary().get("speed_factor", 1.0)
         if speed_factor < 1.0 and not self._slowed:
             self._event("info", "perception", "Person detected ahead; speed reduced by 50%")
@@ -556,7 +580,7 @@ class SimulationEngine:
             if prox["action"] != "clear" or self._prox_action in ("stop", "degraded"):
                 self._event(level, "proximity", msg, sources=prox["sources"])
             self._prox_action = prox["action"]
-        speed_factor = min(speed_factor, prox["speed_factor"])
+        speed_factor = min(speed_factor, prox["speed_factor"], pred_factor)
 
         self.controller.max_speed = self.params["max_speed"]
         cmd = self.controller.compute(
@@ -565,6 +589,8 @@ class SimulationEngine:
         )
         self.waypoint_index = max(self.waypoint_index, cmd.segment_index)
         v, w = cmd.v, cmd.w
+        if waiting:
+            v = 0.0  # predictive wait/stop: hold position until the conflict clears
         if prox["action"] == "stop" and v > 0:
             # Sensor-triggered stop: no forward motion; turning in place is allowed.
             v = 0.0
@@ -635,6 +661,13 @@ class SimulationEngine:
             self.explore_goals = 0
             self._grid_source_version = None
             self._prox_action = "clear"
+            self.prediction.reset(self.world)
+            self._pred_factor = 1.0
+            self._pred_hold_until = 0.0
+            self._pred_action = "continue"
+            self._pred_wait_since = None
+            self._pred_last_replan = -1e9
+            self._extra_block = None
             self.replan_history: deque = deque(maxlen=20)
             self._replan = None
             self.proximity_stops = 0
@@ -781,7 +814,7 @@ class SimulationEngine:
             self._event("info", "mission", "Emergency stop pressed; the robot was not moving")
             return "Emergency stop: the robot was not moving"
 
-    def configure(self, max_speed=None, safety_margin=None, moving_obstacles=None) -> None:
+    def configure(self, max_speed=None, safety_margin=None, moving_obstacles=None, predictive=None) -> None:
         with self._lock:
             changes = []
             if max_speed is not None:
@@ -794,6 +827,9 @@ class SimulationEngine:
             if moving_obstacles is not None:
                 self.params["moving_obstacles"] = bool(moving_obstacles)
                 changes.append(f"moving obstacles {'on' if moving_obstacles else 'off'}")
+            if predictive is not None:
+                self.params["predictive"] = bool(predictive)
+                changes.append("predictive avoidance " + ("on" if predictive else "off (reactive baseline)"))
             if changes:
                 self._event("info", "config", "Parameters updated: " + ", ".join(changes))
 
@@ -1050,6 +1086,69 @@ class SimulationEngine:
             label = "YOLOv8 inference" if mode == "yolov8" else "simulated (ground-truth) detector"
             self._event("info", "perception", f"Detector switched to {label}")
 
+    # ================================================================ predictive avoidance
+    def _predictive_step(self, r) -> tuple[float, bool]:
+        """Risk assessment against predicted obstacle motion. Returns (speed factor,
+        hold position). With predictive avoidance off the assessment still runs, for
+        display and comparison, but does not influence the robot (reactive baseline)."""
+        d = self.prediction.decide(r, self.path, self.waypoint_index, self.params["max_speed"], ROBOT_RADIUS,
+                                   self.params["safety_margin"])
+        if not self.params["predictive"]:
+            return 1.0, False
+        factor = d["speed_factor"]
+        # Slow down immediately; speed up only after the lower speed has been held a while.
+        if factor < self._pred_factor:
+            self._pred_hold_until = self.sim_time + PRED_SPEEDUP_HOLD
+        elif factor > self._pred_factor and self.sim_time < self._pred_hold_until:
+            factor = self._pred_factor
+        action = d["action"] if factor == d["speed_factor"] else self._pred_action
+        if action != self._pred_action:
+            if action == "continue":
+                self._event("info", "prediction", "Predicted conflict cleared; resuming normal speed")
+            else:
+                level = "warning" if action in ("wait", "stop") else "info"
+                self._event(level, "prediction", d["reason"], risk=d["risk"], ttc=d["ttc"], track=d["track"])
+        self._pred_action = action
+        self._pred_factor = factor
+
+        waiting = action in ("wait", "stop")
+        if waiting:
+            self._pred_wait_since = self._pred_wait_since if self._pred_wait_since is not None else self.sim_time
+            waited = self.sim_time - self._pred_wait_since
+            if (action == "stop" or waited >= PRED_REPLAN_AFTER) and self.sim_time - self._pred_last_replan >= PRED_REPLAN_COOLDOWN:
+                self._pred_last_replan = self.sim_time
+                self._replan_around_prediction(d)
+        else:
+            self._pred_wait_since = None
+        return factor, waiting
+
+    def _replan_around_prediction(self, d) -> None:
+        """Plan a route that avoids the cells the tracked objects are predicted to sweep."""
+        previous = self._route_length()
+        old_path, old_plan, old_index = list(self.path), self.last_plan, self.waypoint_index
+        self._extra_block = predicted_mask(self.prediction.tracker.tracks, self.grid.rows, self.grid.cols,
+                                           self.grid.resolution, self.inflation)
+        r = self.world.robot
+        rr, rc = self.grid.world_to_cell(r.x, r.y)
+        self._extra_block[max(rr - 2, 0): rr + 3, max(rc - 2, 0): rc + 3] = False  # never block the robot itself
+        try:
+            self._rebuild_grid()
+            ok = self._plan("prediction")
+        finally:
+            self._extra_block = None
+            self._grid_dirty = True
+        who = f"track {d['track']}" if d["track"] is not None else "a tracked object"
+        if ok and (previous is None or self._route_length() <= 1.8 * previous + 2.0):
+            self.replans += 1
+            self._record_replan("prediction", who, "replanned", previous)
+            self._pred_wait_since = None
+            self._event("info", "replanned", f"Alternative route selected around the predicted path of {who}: "
+                        f"{self.last_plan['length']:.1f} m, validated", obstacle=who)
+        else:
+            # Keep the current route and keep waiting.
+            self.path, self.last_plan, self.waypoint_index = old_path, old_plan, old_index
+            self._event("info", "prediction", f"No safe alternative around the predicted path of {who}; waiting")
+
     # ================================================================ mapping
     def set_planner_map(self, source: str) -> None:
         if source not in PLANNER_MAPS:
@@ -1096,6 +1195,7 @@ class SimulationEngine:
                 self._event("info", "mapping", "Planner switched to the live SLAM map for exploration")
             self.exploring = True
             self._explore_blacklist = []
+            self._explore_coverage = []
             self.explore_goals = 0
             self.mission_id += 1
             self.mission_time = 0.0
@@ -1138,6 +1238,11 @@ class SimulationEngine:
         r = self.world.robot
         if self.explore_goals >= MAX_EXPLORE_GOALS:
             return self._finish_exploration("goal limit reached")
+        # Stop when the last few frontiers no longer add map coverage (noise-sized frontiers).
+        known = self.slam.map.stats()["known_fraction"]
+        self._explore_coverage.append(known)
+        if len(self._explore_coverage) > 4 and known - self._explore_coverage[-5] < 0.01:
+            return self._finish_exploration("coverage no longer increasing")
         candidates = []
         for fx, fy, size in self._frontiers():
             if math.hypot(fx - r.x, fy - r.y) < 1.0:
@@ -1384,6 +1489,7 @@ class SimulationEngine:
                 "perception": self.perception.snapshot(self.sim_time),
                 "sensors": {**self.sensors.snapshot(self.sim_time), "proximity_stops": self.proximity_stops},
                 "mapping": self.mapping_status(),
+                "prediction": self.prediction.snapshot(self.params["predictive"]),
             }
 
     def map_data(self) -> dict:

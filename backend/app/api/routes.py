@@ -219,7 +219,7 @@ def reset(request: Request, body: ResetRequest | None = None):
 @router.post("/simulation/config", tags=["simulation"], responses=ERRORS)
 def configure(body: ConfigRequest, request: Request):
     eng = engine(request)
-    eng.configure(body.max_speed, body.safety_margin, body.moving_obstacles)
+    eng.configure(body.max_speed, body.safety_margin, body.moving_obstacles, body.predictive)
     return {"ok": True, "params": eng.snapshot()["params"]}
 
 
@@ -419,3 +419,17 @@ async def speech_transcribe(request: Request, language: str | None = Query(None,
     from starlette.concurrency import run_in_threadpool
 
     return await run_in_threadpool(request.app.state.speech.transcribe, data, language)
+
+
+# ================================================================ evaluation
+@router.get("/evaluation", tags=["evaluation"], responses=ERRORS)
+def evaluation_results():
+    """Results of the last `python -m app.evaluation` run (predictive vs reactive)."""
+    import json
+
+    from ..config import BACKEND_DIR
+
+    path = BACKEND_DIR / "evaluation" / "results.json"
+    if not path.is_file():
+        raise CommandError("not_generated", "No evaluation results yet. Run: python -m app.evaluation (from backend/)", 404)
+    return json.loads(path.read_text(encoding="utf-8"))
