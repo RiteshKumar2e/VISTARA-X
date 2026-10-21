@@ -68,6 +68,11 @@ class Settings:
     # 1 opens the PyBullet GUI window (needs a display); default is headless DIRECT mode.
     pybullet_gui: bool = field(default_factory=lambda: os.getenv("VISTARA_PYBULLET_GUI", "0") == "1")
     log_level: str = field(default_factory=lambda: os.getenv("VISTARA_LOG_LEVEL", "INFO").upper())
+    # Saved occupancy maps (ROS map_server PGM + YAML pairs).
+    maps_dir: str = field(default_factory=lambda: os.getenv("VISTARA_MAPS_DIR", str(BACKEND_DIR / "maps")))
+    # Speech recognition (faster-whisper). tiny | base | small | medium. "base" answers in
+    # ~3-6 s on a 4-core laptop CPU; "small" is more accurate for Hindi but ~4x slower.
+    whisper_model: str = field(default_factory=lambda: os.getenv("VISTARA_WHISPER_MODEL", "base"))
 
     def __post_init__(self) -> None:
         if not 0.05 <= self.grid_resolution <= 1.0:

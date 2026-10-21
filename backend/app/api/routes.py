@@ -2,13 +2,20 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import time
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, Query, Request, Response
 
 from ..schemas.api import (
     Ack,
+    CommandRequest,
     ConfigRequest,
+    MapImportRequest,
+    MapNameRequest,
+    MappingControlRequest,
+    PlannerMapRequest,
     DetectorRequest,
     ErrorResponse,
     ModelSelectRequest,
@@ -194,6 +201,13 @@ def stop(request: Request):
     return _ack(eng, "Mission stopped")
 
 
+@router.post("/navigation/estop", tags=["navigation"], response_model=Ack)
+def emergency_stop(request: Request):
+    """Emergency stop: always succeeds and halts the robot, with or without a mission."""
+    eng = engine(request)
+    return _ack(eng, eng.emergency_stop())
+
+
 @router.post("/simulation/reset", tags=["simulation"], response_model=Ack, responses=ERRORS)
 def reset(request: Request, body: ResetRequest | None = None):
     eng = engine(request)
@@ -281,3 +295,127 @@ def inject_obstacle(request: Request):
 @router.delete("/obstacles", tags=["simulation"])
 def clear_obstacles(request: Request):
     return {"ok": True, "removed": engine(request).clear_obstacles()}
+
+
+# ================================================================ mapping and localisation
+@router.get("/mapping", tags=["mapping"], responses=ERRORS)
+def mapping(request: Request, which: str = Query("slam", pattern="^(slam|imported)$")):
+    """The live SLAM map (or the imported map) with pose estimate, trajectory, last scan
+    and localisation status. All data is simulation-generated."""
+    return engine(request).mapping_data(which)
+
+
+@router.post("/mapping/explore", tags=["mapping"], response_model=Ack, responses=ERRORS)
+def explore(request: Request):
+    """Autonomous frontier exploration: the robot maps the area by itself."""
+    eng = engine(request)
+    eng.explore()
+    return _ack(eng, "Exploration started")
+
+
+@router.post("/mapping/control", tags=["mapping"], responses=ERRORS)
+def mapping_control(body: MappingControlRequest, request: Request):
+    eng = engine(request)
+    eng.set_mapping(body.enabled, body.clear)
+    return {"ok": True, "mapping": eng.mapping_status()}
+
+
+@router.post("/mapping/planner", tags=["mapping"], responses=ERRORS)
+def planner_map(body: PlannerMapRequest, request: Request):
+    """Which map the A* planner uses: simulator geometry, the live SLAM map or the imported map."""
+    eng = engine(request)
+    eng.set_planner_map(body.source)
+    return {"ok": True, "mapping": eng.mapping_status()}
+
+
+@router.get("/mapping/export", tags=["mapping"])
+def export_map(request: Request, file: str = Query("pgm", pattern="^(pgm|yaml)$")):
+    """The live SLAM map in ROS map_server format (download map.pgm and map.yaml)."""
+    pgm, yaml = engine(request).export_map()
+    if file == "pgm":
+        return Response(pgm, media_type="image/x-portable-graymap",
+                        headers={"Content-Disposition": 'attachment; filename="map.pgm"'})
+    return Response(yaml, media_type="text/yaml", headers={"Content-Disposition": 'attachment; filename="map.yaml"'})
+
+
+@router.get("/mapping/maps", tags=["mapping"])
+def saved_maps(request: Request):
+    return {"maps": engine(request).list_maps()}
+
+
+@router.post("/mapping/save", tags=["mapping"], responses=ERRORS)
+def save_map(body: MapNameRequest, request: Request):
+    return {"ok": True, "map": engine(request).save_map(body.name)}
+
+
+@router.post("/mapping/load", tags=["mapping"], responses=ERRORS)
+def load_map(body: MapNameRequest, request: Request):
+    """Load a saved map as the imported map (select it with /mapping/planner to plan on it)."""
+    return {"ok": True, "map": engine(request).load_map(body.name)}
+
+
+@router.post("/mapping/import", tags=["mapping"], responses=ERRORS)
+def import_map(body: MapImportRequest, request: Request):
+    """Import a ROS map_server map: YAML text plus the PGM image (base64)."""
+    try:
+        pgm = base64.b64decode(body.pgm_base64, validate=True)
+    except (binascii.Error, ValueError):
+        raise CommandError("invalid_map", "pgm_base64 is not valid base64", 422)
+    return {"ok": True, "map": engine(request).import_map(body.yaml, pgm, body.name)}
+
+
+# ================================================================ places, commands, speech
+@router.get("/places", tags=["commands"])
+def places(request: Request):
+    """Named destinations of the current scenario (with their Hindi names and aliases)."""
+    eng = engine(request)
+    return {"scenario": eng.scenario.key, "places": [p.to_dict() for p in eng.scenario.places]}
+
+
+@router.post("/commands/interpret", tags=["commands"], responses=ERRORS)
+def interpret(body: CommandRequest, request: Request):
+    """Parse a typed or recognised command, validate it and (for stop/pause/resume, or in
+    trusted mode) execute it. New destinations otherwise wait for /commands/{id}/confirm."""
+    return request.app.state.commands.interpret(body.text, body.source, body.speech, body.trusted)
+
+
+@router.post("/commands/{command_id}/confirm", tags=["commands"], responses=ERRORS)
+def confirm_command(command_id: int, request: Request):
+    return request.app.state.commands.confirm(command_id)
+
+
+@router.post("/commands/{command_id}/cancel", tags=["commands"], responses=ERRORS)
+def cancel_command(command_id: int, request: Request):
+    return request.app.state.commands.cancel(command_id)
+
+
+@router.get("/commands", tags=["commands"])
+def command_history(request: Request):
+    """Every command this session: transcript, language, intent, validation and response."""
+    return {"commands": request.app.state.commands.snapshot()}
+
+
+@router.get("/speech/status", tags=["commands"])
+def speech_status(request: Request):
+    return request.app.state.speech.status()
+
+
+@router.post("/speech/load", tags=["commands"], responses=ERRORS)
+def speech_load(request: Request):
+    """Load the Whisper model now, so the first command is not delayed by loading."""
+    return request.app.state.speech.warm_up()
+
+
+@router.post("/speech/transcribe", tags=["commands"], responses=ERRORS)
+async def speech_transcribe(request: Request, language: str | None = Query(None, pattern="^(en|hi)$")):
+    """Transcribe a short recording (raw request body: audio/webm, audio/ogg or audio/wav)
+    with local Whisper. Returns the text, language and confidence information."""
+    ctype = request.headers.get("content-type", "").split(";")[0].strip()
+    if not ctype.startswith("audio/") and ctype != "application/octet-stream":
+        raise CommandError("bad_audio", "Send the recording as audio/webm, audio/ogg or audio/wav", 415)
+    if int(request.headers.get("content-length") or 0) > 3 * 1024 * 1024:
+        raise CommandError("audio_too_large", "Audio clip is larger than 3 MB", 413)
+    data = await request.body()
+    from starlette.concurrency import run_in_threadpool
+
+    return await run_in_threadpool(request.app.state.speech.transcribe, data, language)

@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { AlertCentre, useA11ySettings } from '../components/AlertCentre';
 import { ChallengePanel } from '../components/ChallengePanel';
+import { CommandConsole } from '../components/CommandConsole';
+import { MappingPanel } from '../components/MappingPanel';
 import { EventLog } from '../components/EventLog';
 import { GuidedDemo } from '../components/GuidedDemo';
 import { MissionControls } from '../components/MissionControls';
@@ -84,6 +87,7 @@ export default function Dashboard() {
   const [walkStart, setWalkStart] = useState(null); // first click of a walking person's route
   const [lite, setLite] = useState(() => readStored('vistara.demoMode') === '1');
   const [challenge, setChallenge] = useState(null); // 'Trap the robot' game state
+  const a11y = useA11ySettings();
 
   // Demo mode lowers 3D quality locally and the robot's max speed on the backend;
   // turning it off restores the speed that was set before.
@@ -222,6 +226,7 @@ export default function Dashboard() {
         demoMode={lite}
         onDemoMode={toggleDemoMode}
       />
+      <AlertCentre telemetry={telemetry} settings={a11y} />
 
       {versionMismatch && (
         <div className="banner banner-warning" role="status">
@@ -246,6 +251,7 @@ export default function Dashboard() {
             selectedObstacle={selectedObstacle}
             lite={lite}
           />
+          <MappingPanel telemetry={telemetry} online={online} command={command} />
           <div className="split">
             <TelemetryPanel telemetry={telemetry} connection={connection} />
             <PerceptionPanel telemetry={telemetry} command={command} online={online} />
@@ -259,6 +265,7 @@ export default function Dashboard() {
           </div>
         </div>
         <div className="col-side">
+          <CommandConsole telemetry={telemetry} online={online} command={command} />
           <MissionControls
             telemetry={telemetry}
             command={command}

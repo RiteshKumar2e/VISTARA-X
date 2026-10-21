@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable
 
 from .world import Obstacle, RobotState, World
@@ -69,12 +69,34 @@ def _enclosed() -> World:
 
 
 @dataclass(frozen=True)
+class Place:
+    """A named destination users can ask for by voice or text. ``aliases`` are matched
+    by the command parser (English, romanised Hindi and Devanagari)."""
+
+    key: str
+    name: str
+    name_hi: str
+    x: float
+    y: float
+    aliases: tuple[str, ...]
+
+    def to_dict(self) -> dict:
+        return {"key": self.key, "name": self.name, "name_hi": self.name_hi, "x": self.x, "y": self.y,
+                "aliases": list(self.aliases)}
+
+
+START_ALIASES = ("start", "starting point", "start point", "home", "base", "shuruaat", "shuruat", "शुरुआत",
+                 "शुरूआत", "शुरुआती जगह", "होम")
+
+
+@dataclass(frozen=True)
 class Scenario:
     key: str
     name: str
     description: str
     default_target: tuple[float, float]
     build: Callable[[], World]
+    places: tuple[Place, ...] = field(default_factory=tuple)
 
     def to_dict(self) -> dict:
         return {
@@ -82,6 +104,7 @@ class Scenario:
             "name": self.name,
             "description": self.description,
             "default_target": {"x": self.default_target[0], "y": self.default_target[1]},
+            "places": [p.to_dict() for p in self.places],
         }
 
 
@@ -94,6 +117,20 @@ SCENARIOS: dict[str, Scenario] = {
             "Shelving aisles with a patrolling person. Used for the guided demo.",
             (18.5, 6.0),
             _warehouse,
+            (
+                Place("start", "Starting point", "शुरुआत", 1.5, 6.0, START_ALIASES),
+                Place("reception", "Reception", "रिसेप्शन", 2.0, 10.5,
+                      ("reception", "front desk", "help desk", "swagat kaksh", "रिसेप्शन", "स्वागत कक्ष")),
+                Place("storage", "Storage room", "स्टोर रूम", 11.5, 10.3,
+                      ("storage room", "storage", "store room", "storeroom", "godown", "bhandar",
+                       "स्टोर रूम", "स्टोरेज", "गोदाम", "भंडार")),
+                Place("charging", "Charging dock", "चार्जिंग डॉक", 1.2, 1.2,
+                      ("charging dock", "charging", "charger", "चार्जिंग", "चार्जर")),
+                Place("loading", "Loading bay", "लोडिंग बे", 18.5, 10.5,
+                      ("loading bay", "loading dock", "loading", "लोडिंग")),
+                Place("exit", "Exit", "निकास", 18.5, 6.0,
+                      ("exit", "way out", "bahar", "nikas", "nikaas", "निकास", "बाहर", "एग्जिट", "एक्जिट")),
+            ),
         ),
         Scenario(
             "slalom",
@@ -101,6 +138,10 @@ SCENARIOS: dict[str, Scenario] = {
             "Staggered barriers that force a long, winding route.",
             (18.5, 10.0),
             _slalom,
+            (
+                Place("start", "Starting point", "शुरुआत", 1.5, 2.0, START_ALIASES),
+                Place("finish", "Finish", "फिनिश", 18.5, 10.0, ("finish", "finish line", "end", "फिनिश", "अंत")),
+            ),
         ),
         Scenario(
             "enclosed",
@@ -108,6 +149,11 @@ SCENARIOS: dict[str, Scenario] = {
             "The target sits inside a sealed bay. The planner must report Blocked.",
             (16.0, 6.0),
             _enclosed,
+            (
+                Place("start", "Starting point", "शुरुआत", 1.5, 6.0, START_ALIASES),
+                Place("bay", "Inner bay", "अंदर का बे", 16.0, 6.0,
+                      ("inner bay", "bay", "sealed bay", "andar ka bay", "अंदर का बे", "बे")),
+            ),
         ),
     ]
 }

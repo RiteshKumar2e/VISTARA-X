@@ -31,3 +31,9 @@ npm-debug.log*
 Thumbs.db
 .vscode/
 .idea/
+
+# Saved maps: only the documented demo map is versioned
+backend/maps/*
+!backend/maps/warehouse_demo.pgm
+!backend/maps/warehouse_demo.yaml
+!backend/maps/README.md

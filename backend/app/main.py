@@ -18,6 +18,8 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .api import routes, websocket
+from .commands.service import CommandService
+from .commands.speech import SpeechError, SpeechRecognizer
 from .config import Settings, settings as default_settings
 from .simulation.engine import CommandError, SimulationEngine
 
@@ -66,6 +68,8 @@ def create_app(cfg: Settings = default_settings, start_engine: bool = True) -> F
     async def lifespan(app: FastAPI):
         engine = SimulationEngine(cfg)
         app.state.engine = engine
+        app.state.commands = CommandService(engine)
+        app.state.speech = SpeechRecognizer(cfg.whisper_model)
         app.state.hub = websocket.TelemetryHub(engine, cfg.telemetry_hz, cfg.max_ws_clients)
         if start_engine:
             _raise_process_priority()
@@ -124,6 +128,10 @@ def create_app(cfg: Settings = default_settings, start_engine: bool = True) -> F
 
     @app.exception_handler(CommandError)
     async def command_error(_: Request, exc: CommandError):
+        return _error(exc.status_code, exc.code, exc.message)
+
+    @app.exception_handler(SpeechError)
+    async def speech_error(_: Request, exc: SpeechError):
         return _error(exc.status_code, exc.code, exc.message)
 
     @app.exception_handler(RequestValidationError)

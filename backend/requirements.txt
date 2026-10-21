@@ -4,6 +4,7 @@ uvicorn[standard]==0.30.6
 pydantic==2.13.5
 numpy==1.26.4
 opencv-python-headless>=4.9,<5
+scipy>=1.11  # SLAM: distance transform (scan matching, map inflation) and frontier labelling
 
 # Tests
 pytest==8.3.4

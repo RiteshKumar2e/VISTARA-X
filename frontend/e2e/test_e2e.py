@@ -37,6 +37,27 @@ def browser():
         b.close()
 
 
+FIXTURE_WAV = Path(__file__).resolve().parents[2] / "backend" / "tests" / "fixtures" / "tts_en_storage_room.wav"
+
+
+@pytest.fixture
+def browser_with_mic():
+    """Chromium with a fake microphone that plays a synthetic-speech WAV (Windows TTS)."""
+    with sync_playwright() as p:
+        b = p.chromium.launch(args=[
+            "--use-angle=swiftshader", "--enable-unsafe-swiftshader",
+            "--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream",
+            f"--use-file-for-fake-audio-capture={FIXTURE_WAV}",
+        ])
+        ctx = b.new_context(viewport={"width": 1440, "height": 1000}, reduced_motion="reduce")
+        ctx.grant_permissions(["microphone"], origin=FRONTEND)
+        ctx.add_init_script("try { localStorage.setItem('vistara.view', 'plan') } catch (e) {}")
+        pg = ctx.new_page()
+        pg.errors = []
+        yield pg
+        b.close()
+
+
 @pytest.fixture
 def page(browser):
     # Reduced motion: keeps headless software rendering light and exercises the
@@ -127,10 +148,12 @@ def test_full_mission_via_ui(page, demo_speed):
     expect(page.locator("#navigation")).to_contain_text("Route obstructed")
     expect(page.locator("#navigation canvas.grid-canvas")).to_be_visible()
     # Dismiss the newest notification (older ones may be auto-dismissing after 8 s).
+    # New toasts keep arriving (the patrolling person causes replans), so the stack is
+    # rarely "stable" for Playwright's click: dispatch the click on the button itself.
     toast = page.locator(".toast").filter(has_text="Route replanned").last
     expect(toast).to_be_visible()
     text = toast.inner_text()
-    toast.get_by_role("button", name="Dismiss notification").click(timeout=5000)
+    toast.get_by_role("button", name="Dismiss notification").dispatch_event("click")
     expect(page.locator(".toast").filter(has_text=text.splitlines()[-1])).to_have_count(0)
     page.screenshot(path=str(SHOTS / "mission-replanned.png"))
 
@@ -547,3 +570,92 @@ def test_trap_the_robot_challenge(page):
     assert t["mission"]["status"] == "blocked" and t["safety"]["collisions"] == 0
     wait_backend(page, lambda t: abs(t["params"]["max_speed"] - speed) < 1e-6, timeout=10)  # speed restored
     assert not page.errors, page.errors
+
+
+# ------------------------------------------------------------ commands, mapping, accessibility
+def test_hindi_text_command_confirm_and_history(page):
+    open_console(page)
+    console = page.locator("#commands")
+    console.locator("#cmd-text").fill("रोबोट को रिसेप्शन तक ले जाओ")
+    console.locator("#cmd-text").press("Enter")  # keyboard submit
+    card = console.locator(".cmd-card")
+    expect(card).to_contain_text("Waiting for your confirmation")
+    expect(card).to_contain_text("Hindi")
+    expect(card).to_contain_text("रिसेप्शन तक जाएँ?")
+    assert telemetry(page)["mission"]["status"] == "idle"  # nothing moves before confirmation
+    card.get_by_role("button", name="Confirm and go").click()
+    expect(card).to_contain_text("Executed")
+    t = wait_backend(page, lambda t: t["mission"]["status"] == "navigating", timeout=20)
+    assert t["target"] == {"x": 2.0, "y": 10.5}
+    expect(console.locator(".cmd-history")).to_contain_text("रोबोट को रिसेप्शन तक ले जाओ")
+    console.get_by_role("button", name="Emergency stop").click()
+    wait_backend(page, lambda t: t["mission"]["status"] == "stopped", timeout=10)
+    # Pressed again while stopped: still succeeds (no error, no 409).
+    console.get_by_role("button", name="Emergency stop").click()
+    expect(page.locator(".controls")).to_contain_text("the robot was not moving")
+    assert not page.errors, page.errors
+
+
+def test_unknown_place_and_example_chip(page):
+    open_console(page)
+    console = page.locator("#commands")
+    console.get_by_role("button", name="Take the robot to the cafeteria").click()
+    expect(console.locator(".cmd-card")).to_contain_text("Needs clarification")
+    expect(console.locator(".cmd-card")).to_contain_text("I don't know that place")
+    assert telemetry(page)["target"] is None
+    console.locator("#cmd-place").select_option("exit")
+    console.get_by_role("button", name="Go", exact=True).click()
+    expect(console.locator(".cmd-card")).to_contain_text("Route found")
+
+
+def test_voice_command_through_fake_microphone(browser_with_mic):
+    page = browser_with_mic
+    open_console(page)
+    console = page.locator("#commands")
+    console.locator("#speech-lang").select_option("en")
+    console.get_by_role("button", name="Speak a command").click()
+    expect(console.get_by_role("button", name="Stop recording")).to_be_visible()
+    time.sleep(3.5)  # the fake microphone plays the WAV fixture
+    console.get_by_role("button", name="Stop recording").click()
+    card = console.locator(".cmd-card")
+    expect(card).to_contain_text("storage room", timeout=90000)
+    expect(card).to_contain_text("faster-whisper")
+    expect(card).to_contain_text("Waiting for your confirmation")
+
+
+def test_mapping_panel_explore_save_and_planner(page):
+    open_console(page)
+    panel = page.locator("#mapping")
+    expect(panel).to_contain_text("Simulation-generated")
+    panel.get_by_role("button", name="Explore and map automatically").click()
+    wait_backend(page, lambda t: t["mapping"]["exploring"] and t["mission"]["status"] == "navigating", timeout=20)
+    expect(panel.locator("#planner-map")).to_have_value("slam")
+    wait_backend(page, lambda t: t["mapping"]["known_fraction"] > 0.4, timeout=60)
+    page.locator("#commands").get_by_role("button", name="Emergency stop").click()
+    wait_backend(page, lambda t: t["mission"]["status"] == "stopped", timeout=10)
+    panel.locator("summary").filter(has_text="Save, load").click()
+    panel.locator("#map-name").fill("e2e_map")
+    panel.get_by_role("button", name="Save", exact=True).click()
+    expect(panel.locator(".map-list")).to_contain_text("e2e_map", timeout=10000)
+    panel.locator(".map-list li").filter(has_text="e2e_map").get_by_role("button", name="Load").click()
+    expect(panel.get_by_role("button", name="Imported map: e2e_map")).to_be_visible(timeout=10000)
+    panel.locator("#planner-map").select_option("imported")
+    wait_backend(page, lambda t: t["mapping"]["planner_map"] == "imported", timeout=10)
+    panel.locator("#planner-map").select_option("simulator")
+    wait_backend(page, lambda t: t["mapping"]["planner_map"] == "simulator", timeout=10)
+    assert not page.errors, page.errors
+
+
+def test_accessible_mode_and_visual_blocked_alert(page):
+    open_console(page)
+    page.locator(".alert-settings summary").click()
+    page.get_by_label("Accessible mode").check()
+    assert page.evaluate("document.documentElement.classList.contains('a11y-large')")
+    assert page.evaluate("document.documentElement.classList.contains('a11y-contrast')")
+    expect(page.locator("#alert-duration")).to_have_value("0")
+    # A blocked mission is announced visually with text, not by colour or sound alone.
+    page.get_by_role("button", name="Run blocked-route demo").click()
+    banner = page.locator(".alert-centre .alert-danger").first
+    expect(banner).to_contain_text("blocked", ignore_case=True, timeout=20000)
+    page.get_by_label("Accessible mode").uncheck()
+    assert not page.evaluate("document.documentElement.classList.contains('a11y-large')")

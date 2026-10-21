@@ -92,3 +92,43 @@ export const CameraIcon = (p) => (
     <path d="M9 7l1.5-2h3L15 7" />
   </Svg>
 );
+export const MicIcon = (p) => (
+  <Svg {...p}>
+    <rect x="9" y="3" width="6" height="11" rx="3" />
+    <path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M8.5 21h7" />
+  </Svg>
+);
+export const SendIcon = (p) => (
+  <Svg {...p}>
+    <path d="M4 12l16-8-6 16-2.5-6.5z" />
+  </Svg>
+);
+export const MapIcon = (p) => (
+  <Svg {...p}>
+    <path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2z" />
+    <path d="M9 4v14M15 6v14" />
+  </Svg>
+);
+export const WarningIcon = (p) => (
+  <Svg {...p}>
+    <path d="M12 3.5l9.5 16.5h-19z" />
+    <path d="M12 10v4.5M12 17.2v.3" strokeWidth="2.2" />
+  </Svg>
+);
+export const CheckIcon = (p) => (
+  <Svg {...p}>
+    <path d="M4.5 12.5l5 5 10-11" strokeWidth="2.2" />
+  </Svg>
+);
+export const InfoIcon = (p) => (
+  <Svg {...p}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 11v6M12 7.6v.3" strokeWidth="2.2" />
+  </Svg>
+);
+export const SpeakerIcon = (p) => (
+  <Svg {...p}>
+    <path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" />
+    <path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11" />
+  </Svg>
+);

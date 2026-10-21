@@ -81,6 +81,34 @@ class ModelSelectRequest(StrictModel):
     multi_every: Optional[int] = Field(None, ge=1, le=30)
 
 
+class CommandRequest(StrictModel):
+    text: str = Field(..., max_length=300, description="Transcript or typed command (English or Hindi)")
+    source: Literal["text", "speech", "browser_speech", "selector"] = "text"
+    # Execute a valid destination without asking for confirmation.
+    trusted: bool = False
+    # Speech-recognition metadata to keep with the transcript (from /speech/transcribe or the browser).
+    speech: Optional[dict[str, Optional[str | float | bool]]] = None
+
+
+class MapNameRequest(StrictModel):
+    name: str = Field(..., min_length=1, max_length=40, pattern=r"^[A-Za-z0-9_-]+$")
+
+
+class MapImportRequest(StrictModel):
+    name: str = Field(..., min_length=1, max_length=40, pattern=r"^[A-Za-z0-9_-]+$")
+    yaml: str = Field(..., min_length=10, max_length=4000, description="map_server YAML text")
+    pgm_base64: str = Field(..., min_length=8, max_length=8_000_000, description="PGM image, base64-encoded")
+
+
+class PlannerMapRequest(StrictModel):
+    source: Literal["simulator", "slam", "imported"]
+
+
+class MappingControlRequest(StrictModel):
+    enabled: Optional[bool] = None
+    clear: bool = False
+
+
 class ErrorBody(BaseModel):
     code: str
     message: str

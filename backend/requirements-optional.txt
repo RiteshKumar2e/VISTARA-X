@@ -12,3 +12,8 @@ pybullet==3.2.7
 ultralytics==8.3.174
 torch>=2.2
 torchvision>=0.17
+
+# Local speech recognition (Whisper via CTranslate2, CPU). Models download on first use
+# (base ~145 MB, small ~480 MB) into the Hugging Face cache; audio is decoded by PyAV,
+# so ffmpeg is not needed. Without it the dashboard still accepts typed commands.
+faster-whisper==1.1.0

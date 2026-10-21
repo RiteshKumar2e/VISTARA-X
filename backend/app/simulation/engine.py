@@ -10,15 +10,22 @@ from __future__ import annotations
 
 import logging
 import math
+import re
 import threading
 import time
 from collections import deque
 from datetime import datetime, timezone
+from pathlib import Path
 
 from ..config import Settings
 from ..control.controller import PurePursuitController, integrate
+from ..mapping.occupancy import FREE, OCCUPIED, UNKNOWN, LogOddsMap, resample
+from ..mapping.slam import SlamSession
 from ..navigation.astar import plan
 from ..navigation.grid import OccupancyGrid
+
+import numpy as np
+from scipy.ndimage import label as label_regions
 from ..perception.service import PerceptionService
 from ..sensors.suite import SensorSuite
 from .physics import PYBULLET_AVAILABLE, PYBULLET_ERROR, AnalyticCollision, PyBulletCollision
@@ -40,6 +47,11 @@ MAX_USER_OBSTACLES = 30
 
 ACTIVE = {"planning", "navigating", "replanning", "blocked_waiting"}
 REPLAN_DWELL = 0.3  # seconds the robot holds still after a route is invalidated, before replanning
+SLAM_RESOLUTION = 0.1  # m per mapping cell
+PLANNER_MAPS = ("simulator", "slam", "imported")
+MIN_FRONTIER_CELLS = 6  # frontier clusters smaller than this (0.6 m) are ignored
+MAX_EXPLORE_GOALS = 30
+MAP_NAME = re.compile(r"^[A-Za-z0-9_-]{1,40}$")
 
 
 class CommandError(Exception):
@@ -68,7 +80,12 @@ class SimulationEngine:
             "max_speed": settings.max_speed,
             "safety_margin": settings.safety_margin,
             "moving_obstacles": True,
+            "planner_map": "simulator",
         }
+        self.slam = SlamSession(MAP_W, MAP_H, SLAM_RESOLUTION)
+        self.imported_map: dict | None = None  # {"map": LogOddsMap, "name", "source", "meta"}
+        self.maps_dir = Path(settings.maps_dir)
+        self._grid_source_version = None
         self.controller = PurePursuitController()
         self.events: deque[dict] = deque(maxlen=200)
         self._event_id = 0
@@ -165,8 +182,29 @@ class SimulationEngine:
     def inflation(self) -> float:
         return ROBOT_RADIUS + self.params["safety_margin"]
 
+    def _planner_source_map(self) -> LogOddsMap | None:
+        src = self.params["planner_map"]
+        if src == "slam":
+            return self.slam.map
+        if src == "imported" and self.imported_map:
+            return self.imported_map["map"]
+        return None
+
     def _rebuild_grid(self) -> None:
-        self.grid.build(self.world.obstacles, self.inflation, MOVING_EXTRA_INFLATION)
+        source = self._planner_source_map()
+        if source is None:
+            self.grid.build(self.world.obstacles, self.inflation, MOVING_EXTRA_INFLATION)
+        else:
+            occ, unknown = resample(
+                source.states(), source.resolution, source.origin, self.grid.rows, self.grid.cols, self.grid.resolution
+            )
+            imported = self.params["planner_map"] == "imported"
+            if imported:
+                # An imported map is static: obstacles that are not in it (people, added
+                # objects) come from live LiDAR returns of the last 2 s.
+                occ = occ | self.sensors.lidar_occupied(self.sim_time)
+            self.grid.build_from_mask(occ, unknown, self.inflation, unknown_blocked=imported)
+            self._grid_source_version = (source.version, self.sensors.lidar.seq)
         self.physics.sync(self.world.obstacles)
         self._grid_dirty = False
 
@@ -313,6 +351,8 @@ class SimulationEngine:
                     continue  # ignore the cells under the robot itself
                 row, col = self.grid.world_to_cell(px, py)
                 if self.grid.blocked[row, col]:
+                    if self.params["planner_map"] != "simulator":
+                        return True  # a mapped obstacle: the map has no object identities
                     return self._blocking_obstacle(px, py) or True
             travelled += seg * (1 - t0)
         return None
@@ -372,6 +412,17 @@ class SimulationEngine:
                 self._step_blocked_waiting()
 
             self.sensors.step(self.world, self.dt, self.sim_time)
+            r = self.world.robot
+            odom = self.sensors.odometry
+            self.slam.step(
+                tuple(odom._pose) if odom.enabled and odom._pose is not None else None,
+                self.sensors.lidar,
+                (r.x, r.y, r.theta),
+                self.sim_time,
+            )
+            source = self._planner_source_map()
+            if source is not None and self._grid_source_version != (source.version, self.sensors.lidar.seq):
+                self._grid_dirty = True  # the map (or the live LiDAR layer) changed
             self._verify_collisions()
             warning = self.clearance < WARNING_CLEARANCE
             if warning and not self.collision_warning:
@@ -391,10 +442,15 @@ class SimulationEngine:
             self._in_collision = in_collision
 
     def _step_planning(self) -> None:
+        if self.exploring and self.target is None:
+            if self.slam.map.scans >= 3:
+                self._explore_next()
+            return
         causes = {
             "mission_start": "Planning route with A*",
             "target_changed": "Target changed; planning a new route with A*",
             "resume": "Planning route from the current pose with A*",
+            "explore": "Planning a route to the next frontier with A*",
         }
         self._event("info", "planning", causes.get(self._plan_cause, "Planning route with A*"))
         if self._plan(self._plan_cause):
@@ -412,6 +468,12 @@ class SimulationEngine:
             self._enter_blocked(self.last_plan["reason"])
 
     def _enter_blocked(self, reason: str) -> None:
+        if self.exploring:
+            # An unreachable frontier is skipped, not reported as a failed mission.
+            self._explore_blacklist.append(self.target)
+            self._event("info", "explore", "Frontier unreachable; choosing another")
+            self._explore_next()
+            return
         messages = {
             "no_path": "No collision-free route to the target exists",
             "goal_blocked": "Target lies inside an obstacle's safety zone",
@@ -446,6 +508,10 @@ class SimulationEngine:
         r = self.world.robot
         tx, ty = self.target
         if math.hypot(tx - r.x, ty - r.y) <= GOAL_TOLERANCE:
+            if self.exploring:
+                self._explore_blacklist.append(self.target)
+                self._explore_next()
+                return
             self._halt("goal_reached", "")
             self._event(
                 "success",
@@ -457,7 +523,12 @@ class SimulationEngine:
 
         blocker = self._path_obstruction()
         if blocker is not None and self.sim_time - self.last_replan_time >= REPLAN_COOLDOWN:
-            name = blocker.id if isinstance(blocker, Obstacle) else "map edge"
+            if isinstance(blocker, Obstacle):
+                name = blocker.id
+            elif self.params["planner_map"] == "simulator":
+                name = "map edge"
+            else:
+                name = f"an obstacle in the {self.params['planner_map']} map"
             self._event("warning", "obstruction", f"Route obstructed by {name}; robot stopped, replanning", obstacle=name)
             self._begin_replan("obstruction", name)
             return
@@ -557,6 +628,12 @@ class SimulationEngine:
             self.contacts: list[str] = []
             self._verify_collisions()
             self.sensors.reset()
+            r0 = self.world.robot
+            self.slam.reset((r0.x, r0.y, r0.theta))
+            self.exploring = False
+            self._explore_blacklist: list = []
+            self.explore_goals = 0
+            self._grid_source_version = None
             self._prox_action = "clear"
             self.replan_history: deque = deque(maxlen=20)
             self._replan = None
@@ -584,6 +661,19 @@ class SimulationEngine:
                 f"(x {m:.2f}-{w.width - m:.2f}, y {m:.2f}-{w.height - m:.2f})",
                 422,
             )
+        if self.params["planner_map"] != "simulator":
+            if self._grid_dirty:
+                self._rebuild_grid()
+            row, col = self.grid.world_to_cell(x, y)
+            src = self.params["planner_map"]
+            if self.grid.occupied[row, col]:
+                what = "outside the known area of" if src == "imported" else "on an obstacle in"
+                raise CommandError("target_unsafe", f"Target is {what} the {src} map", 409)
+            if self.grid.blocked[row, col]:
+                raise CommandError(
+                    "target_unsafe", f"Target is too close to an obstacle in the {src} map (needs {m:.2f} m clearance)", 409
+                )
+            return
         for obs in w.obstacles:
             if obs.moving:
                 continue
@@ -593,6 +683,27 @@ class SimulationEngine:
                     f"Target is inside or too close to {obs.id} (needs {m:.2f} m clearance)",
                     409,
                 )
+
+    def preview_route(self, x: float, y: float) -> dict:
+        """Validate a destination and plan a route to it without moving the robot."""
+        with self._lock:
+            try:
+                self._validate_target(x, y)
+            except CommandError as exc:
+                return {"valid": False, "reachable": False, "length": None, "code": exc.code, "message": exc.message,
+                        "planner_map": self.params["planner_map"]}
+            if self._grid_dirty:
+                self._rebuild_grid()
+            r = self.world.robot
+            result = plan(self.grid, (r.x, r.y), (x, y))
+            return {
+                "valid": True,
+                "reachable": result.success,
+                "length": round(result.length, 2) if result.success else None,
+                "code": "ok" if result.success else result.reason,
+                "message": "Route found" if result.success else "No collision-free route exists right now",
+                "planner_map": self.params["planner_map"],
+            }
 
     def set_target(self, x: float, y: float) -> None:
         with self._lock:
@@ -620,6 +731,7 @@ class SimulationEngine:
                 raise CommandError("mission_active", "A mission is already running")
             if self.status == "paused":
                 raise CommandError("mission_paused", "Mission is paused; resume or stop it first")
+            self.exploring = False
             self.mission_id += 1
             self.mission_time = 0.0
             self.distance_travelled = 0.0
@@ -652,8 +764,22 @@ class SimulationEngine:
         with self._lock:
             if self.status not in ACTIVE and self.status != "paused":
                 raise CommandError("not_running", "No active mission to stop")
+            self.exploring = False
             self._halt("stopped", "Stopped by operator")
             self._event("info", "mission", "Mission stopped by operator; robot halted")
+
+    def emergency_stop(self) -> str:
+        """Halt the robot unconditionally. Never raises: an emergency stop must not fail
+        because no mission happens to be running."""
+        with self._lock:
+            self.exploring = False
+            if self.status in ACTIVE or self.status == "paused":
+                self._halt("stopped", "Emergency stop")
+                self._event("warning", "mission", "Emergency stop: robot halted")
+                return "Emergency stop: robot halted"
+            self.world.robot.v = self.world.robot.w = 0.0
+            self._event("info", "mission", "Emergency stop pressed; the robot was not moving")
+            return "Emergency stop: the robot was not moving"
 
     def configure(self, max_speed=None, safety_margin=None, moving_obstacles=None) -> None:
         with self._lock:
@@ -924,6 +1050,271 @@ class SimulationEngine:
             label = "YOLOv8 inference" if mode == "yolov8" else "simulated (ground-truth) detector"
             self._event("info", "perception", f"Detector switched to {label}")
 
+    # ================================================================ mapping
+    def set_planner_map(self, source: str) -> None:
+        if source not in PLANNER_MAPS:
+            raise CommandError("invalid_map", f"Planner map must be one of {', '.join(PLANNER_MAPS)}", 422)
+        with self._lock:
+            if source == "imported" and not self.imported_map:
+                raise CommandError("no_imported_map", "Import or load a map before planning on it")
+            if self.status in ACTIVE:
+                raise CommandError("mission_active", "Stop the mission before changing the planner map")
+            self.params["planner_map"] = source
+            self._grid_dirty = True
+            labels = {
+                "simulator": "simulator geometry (ground truth)",
+                "slam": "the live SLAM map (unknown space traversable, discovered by LiDAR)",
+                "imported": f"the imported map '{self.imported_map['name']}'" if self.imported_map else "",
+            }
+            self._event("info", "mapping", f"Planner now uses {labels[source]}")
+
+    def set_mapping(self, enabled: bool | None = None, clear: bool = False) -> None:
+        with self._lock:
+            if clear:
+                r = self.world.robot
+                self.slam.reset((r.x, r.y, r.theta))
+                self._grid_dirty = True
+                self._event("info", "mapping", "SLAM map cleared; mapping restarts from the current pose")
+            if enabled is not None and enabled != self.slam.enabled:
+                self.slam.enabled = bool(enabled)
+                self._event("info", "mapping", "Mapping resumed" if enabled else "Mapping paused (map frozen)")
+
+    def explore(self) -> None:
+        """Autonomous frontier exploration on the SLAM map."""
+        with self._lock:
+            if self.status in ACTIVE:
+                raise CommandError("mission_active", "A mission is already running")
+            if self.status == "paused":
+                raise CommandError("mission_paused", "Mission is paused; resume or stop it first")
+            if not self.sensors.lidar.enabled:
+                raise CommandError("no_lidar", "Exploration needs the LiDAR; enable it in the Sensors panel")
+            if not self.slam.enabled:
+                self.slam.enabled = True
+            if self.params["planner_map"] != "slam":
+                self.params["planner_map"] = "slam"
+                self._grid_dirty = True
+                self._event("info", "mapping", "Planner switched to the live SLAM map for exploration")
+            self.exploring = True
+            self._explore_blacklist = []
+            self.explore_goals = 0
+            self.mission_id += 1
+            self.mission_time = 0.0
+            self.distance_travelled = 0.0
+            self.replans = 0
+            self._event("info", "explore", "Exploration started: driving to frontiers between mapped and unknown space")
+            # The first frontier is chosen by the planning step once a scan is in the map.
+            self.target = None
+            self.path = []
+            self.status = "planning"
+            self.status_reason = "Waiting for the first LiDAR scan"
+
+    def _frontiers(self) -> list[tuple[float, float, int]]:
+        """Frontier clusters on the SLAM map: free cells next to unknown cells.
+        Returns (x, y, size) for each cluster's cell nearest its centroid."""
+        s = self.slam.map.states()
+        free = s == FREE
+        unknown = s == UNKNOWN
+        near_unknown = np.zeros_like(unknown)
+        near_unknown[1:, :] |= unknown[:-1, :]
+        near_unknown[:-1, :] |= unknown[1:, :]
+        near_unknown[:, 1:] |= unknown[:, :-1]
+        near_unknown[:, :-1] |= unknown[:, 1:]
+        frontier = free & near_unknown
+        labels, n = label_regions(frontier, structure=np.ones((3, 3), dtype=bool))
+        res = self.slam.map.resolution
+        out = []
+        for k in range(1, n + 1):
+            rows, cols = np.nonzero(labels == k)
+            if len(rows) < MIN_FRONTIER_CELLS:
+                continue
+            cr, cc = rows.mean(), cols.mean()
+            i = int(np.argmin((rows - cr) ** 2 + (cols - cc) ** 2))
+            out.append(((cols[i] + 0.5) * res, (rows[i] + 0.5) * res, len(rows)))
+        return out
+
+    def _explore_next(self) -> None:
+        if self._grid_dirty:
+            self._rebuild_grid()
+        r = self.world.robot
+        if self.explore_goals >= MAX_EXPLORE_GOALS:
+            return self._finish_exploration("goal limit reached")
+        candidates = []
+        for fx, fy, size in self._frontiers():
+            if math.hypot(fx - r.x, fy - r.y) < 1.0:
+                continue
+            if any(math.hypot(fx - bx, fy - by) < 1.0 for bx, by in self._explore_blacklist):
+                continue
+            row, col = self.grid.world_to_cell(fx, fy)
+            cell = self.grid.nearest_free(row, col, max_radius=4)
+            if cell is None:
+                continue
+            gx, gy = self.grid.cell_to_world(*cell)
+            # Prefer near and large frontiers.
+            candidates.append((math.hypot(gx - r.x, gy - r.y) - 0.02 * size, (gx, gy)))
+        for _, goal in sorted(candidates)[:6]:
+            trial = plan(self.grid, (r.x, r.y), goal)
+            if trial.success:
+                self.target = (round(goal[0], 3), round(goal[1], 3))
+                self.explore_goals += 1
+                self._plan_cause = "explore"
+                self.status = "planning"
+                self.status_reason = ""
+                self._event("info", "explore", f"Frontier {self.explore_goals}: heading to ({goal[0]:.1f}, {goal[1]:.1f})")
+                return
+            self._explore_blacklist.append(goal)
+        self._finish_exploration("no reachable frontiers remain")
+
+    def _finish_exploration(self, why: str) -> None:
+        self.exploring = False
+        stats = self.slam.map.stats()
+        self._halt("idle", f"Exploration finished: {why}")
+        self.target = None
+        self.path = []
+        self._event(
+            "success",
+            "explore",
+            f"Exploration finished ({why}): {stats['known_fraction'] * 100:.0f}% of the area mapped, "
+            f"pose error {self.slam.pose_error * 100:.0f} cm",
+        )
+
+    # --- map files (ROS map_server format) ----------------------------------------------
+    def _map_paths(self, name: str) -> tuple[Path, Path]:
+        if not MAP_NAME.match(name):
+            raise CommandError("invalid_name", "Map names use letters, digits, - and _ (max 40)", 422)
+        return self.maps_dir / f"{name}.pgm", self.maps_dir / f"{name}.yaml"
+
+    def export_map(self) -> tuple[bytes, str]:
+        with self._lock:
+            return self.slam.map.to_pgm(), self.slam.map.to_yaml("map.pgm")
+
+    def save_map(self, name: str) -> dict:
+        pgm_path, yaml_path = self._map_paths(name)
+        with self._lock:
+            if self.slam.map.scans == 0:
+                raise CommandError("empty_map", "The SLAM map is empty; let the robot scan first")
+            pgm, yaml = self.slam.map.to_pgm(), self.slam.map.to_yaml(pgm_path.name)
+            stats = self.slam.map.stats()
+        self.maps_dir.mkdir(parents=True, exist_ok=True)
+        pgm_path.write_bytes(pgm)
+        yaml_path.write_text(yaml, encoding="utf-8")
+        with self._lock:
+            self._event("info", "mapping", f"Map saved as '{name}' ({stats['known_fraction'] * 100:.0f}% known)")
+        return {"name": name, **stats}
+
+    def list_maps(self) -> list[dict]:
+        if not self.maps_dir.is_dir():
+            return []
+        out = []
+        for y in sorted(self.maps_dir.glob("*.yaml")):
+            if (y.with_suffix(".pgm")).is_file() and MAP_NAME.match(y.stem):
+                out.append({"name": y.stem, "modified": datetime.fromtimestamp(y.stat().st_mtime, timezone.utc).isoformat(timespec="seconds")})
+        return out
+
+    def load_map(self, name: str) -> dict:
+        pgm_path, yaml_path = self._map_paths(name)
+        if not (pgm_path.is_file() and yaml_path.is_file()):
+            raise CommandError("not_found", f"No saved map '{name}'", 404)
+        return self.import_map(yaml_path.read_text(encoding="utf-8"), pgm_path.read_bytes(), name, source="saved")
+
+    def import_map(self, yaml_text: str, pgm: bytes, name: str, source: str = "imported") -> dict:
+        from ..mapping.occupancy import MapFormatError, parse_pgm, parse_yaml, states_from_image
+
+        try:
+            meta = parse_yaml(yaml_text)
+            img = parse_pgm(pgm)
+        except MapFormatError as exc:
+            raise CommandError("invalid_map", str(exc), 422) from exc
+        states = states_from_image(img, meta)
+        m = LogOddsMap.from_states(states, meta["resolution"], (meta["origin"][0], meta["origin"][1]))
+        with self._lock:
+            self.imported_map = {
+                "map": m,
+                "name": name,
+                "source": source,
+                "meta": {
+                    "resolution": meta["resolution"],
+                    "origin": meta["origin"][:3] if len(meta["origin"]) >= 3 else [*meta["origin"], 0.0],
+                    "width_px": int(img.shape[1]),
+                    "height_px": int(img.shape[0]),
+                    "width_m": round(img.shape[1] * meta["resolution"], 3),
+                    "height_m": round(img.shape[0] * meta["resolution"], 3),
+                    "negate": meta["negate"],
+                    "occupied_thresh": meta["occupied_thresh"],
+                    "free_thresh": meta["free_thresh"],
+                },
+            }
+            if self.params["planner_map"] == "imported":
+                self._grid_dirty = True
+            st = m.stats()
+            self._event(
+                "info",
+                "mapping",
+                f"Map '{name}' {'loaded' if source == 'saved' else 'imported'}: {img.shape[1]}x{img.shape[0]} cells at "
+                f"{meta['resolution']} m, {st['known_fraction'] * 100:.0f}% known",
+            )
+            return {"name": name, **self.imported_map["meta"], **st}
+
+    def mapping_status(self) -> dict:
+        """Compact mapping/localisation status for every telemetry frame."""
+        lidar_ok = self.sensors.lidar.enabled and self.sensors.lidar.reading is not None
+        ex, ey, eth = self.slam.estimate
+        if not self.slam.enabled:
+            state = "paused"
+        elif not self.sensors.lidar.enabled:
+            state = "no_lidar"
+        else:
+            state = "mapping"
+        return {
+            "state": state,
+            "source": "simulation",
+            "planner_map": self.params["planner_map"],
+            "exploring": self.exploring,
+            "explore_goals": self.explore_goals,
+            "scans": self.slam.map.scans,
+            "known_fraction": self.slam.map.stats()["known_fraction"],
+            "estimate": {"x": round(ex, 3), "y": round(ey, 3), "heading_deg": round(math.degrees(eth) % 360, 1)},
+            "localization": self.slam.localization(lidar_ok),
+            # Evaluation only: compares the estimate with the simulator's ground truth.
+            "pose_error_m": round(self.slam.pose_error, 3),
+            "heading_error_deg": round(self.slam.heading_error_deg, 2),
+            "max_pose_error_m": round(self.slam.max_pose_error, 3),
+            "odometry_drift_m": (self.sensors.odometry.reading or {}).get("drift_m"),
+            "imported": self.imported_map["name"] if self.imported_map else None,
+        }
+
+    def mapping_data(self, which: str = "slam") -> dict:
+        with self._lock:
+            if which == "imported":
+                if not self.imported_map:
+                    raise CommandError("no_imported_map", "No map has been imported", 404)
+                m = self.imported_map["map"]
+                extra = {"name": self.imported_map["name"], "meta": self.imported_map["meta"]}
+            else:
+                m = self.slam.map
+                extra = {
+                    "trajectory": [list(p) for p in self.slam.trajectory],
+                    "truth_trajectory": [list(p) for p in self.slam.truth_trajectory],
+                    "scan": [list(p) for p in self.slam.last_scan_points],
+                }
+            r = self.world.robot
+            return {
+                "kind": which,
+                "frame": "map (= simulator world frame, metres)",
+                "resolution": m.resolution,
+                "origin": [m.origin[0], m.origin[1], 0.0],
+                "rows": m.rows,
+                "cols": m.cols,
+                "cells": m.to_rows(),
+                "legend": {"u": "unknown", "f": "free", "o": "occupied"},
+                "stats": m.stats(),
+                "status": self.mapping_status(),
+                "robot_truth": {"x": round(r.x, 3), "y": round(r.y, 3), "heading_deg": round(math.degrees(r.theta) % 360, 1)},
+                "target": {"x": self.target[0], "y": self.target[1]} if self.target else None,
+                "path": [[round(x, 3), round(y, 3)] for x, y in self.path],
+                "saved_maps": self.list_maps(),
+                **extra,
+            }
+
     # ================================================================ readers
     def _status_public(self) -> str:
         return "blocked" if self.status == "blocked_waiting" else self.status
@@ -992,6 +1383,7 @@ class SimulationEngine:
                 "events": list(self.events)[-60:],
                 "perception": self.perception.snapshot(self.sim_time),
                 "sensors": {**self.sensors.snapshot(self.sim_time), "proximity_stops": self.proximity_stops},
+                "mapping": self.mapping_status(),
             }
 
     def map_data(self) -> dict:

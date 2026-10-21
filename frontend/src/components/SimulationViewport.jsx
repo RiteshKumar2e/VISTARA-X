@@ -227,6 +227,12 @@ export function SimulationViewport({
             <span className="hud-line mono">
               t = {telemetry.sim_time.toFixed(1)} s &middot; replans {m.replans}
             </span>
+            {telemetry.mapping && (
+              <span className="hud-line mono">
+                map {Math.round(telemetry.mapping.known_fraction * 100)}% &middot; SLAM {telemetry.mapping.localization.quality.replace('_', ' ')}{' '}
+                &middot; err {(telemetry.mapping.pose_error_m * 100).toFixed(0)} cm &middot; plan: {telemetry.mapping.planner_map}
+              </span>
+            )}
           </div>
         )}
         {!telemetry && (

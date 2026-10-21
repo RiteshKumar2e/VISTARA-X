@@ -203,3 +203,75 @@ def test_simulation_obstacles_add_and_remove(client):
     assert client.delete(f"/simulation/obstacles/{oid}").json() == {"ok": True, "removed": oid}
     assert client.delete(f"/simulation/obstacles/{oid}").status_code == 404
     assert client.delete("/simulation/obstacles/shelf-1").status_code == 409
+
+
+def test_mapping_endpoints(client, tmp_path):
+    client.app.state.engine.maps_dir = tmp_path
+    time.sleep(0.5)  # let a few LiDAR scans in
+    m = client.get("/mapping").json()
+    assert m["kind"] == "slam" and m["resolution"] == 0.1
+    assert len(m["cells"]) == m["rows"] and set("".join(m["cells"])) <= set("ufo")
+    assert m["status"]["source"] == "simulation" and m["status"]["scans"] > 0
+    assert client.get("/mapping?which=imported").status_code == 404
+    pgm = client.get("/mapping/export?file=pgm")
+    assert pgm.status_code == 200 and pgm.content.startswith(b"P5")
+    yaml = client.get("/mapping/export?file=yaml").text
+    assert "resolution: 0.1" in yaml
+    assert client.post("/mapping/save", json={"name": "demo"}).status_code == 200
+    assert client.get("/mapping/maps").json()["maps"][0]["name"] == "demo"
+    assert client.post("/mapping/save", json={"name": "../evil"}).status_code == 422
+    loaded = client.post("/mapping/load", json={"name": "demo"}).json()["map"]
+    assert loaded["resolution"] == 0.1
+    assert client.post("/mapping/planner", json={"source": "imported"}).status_code == 200
+    assert client.post("/mapping/planner", json={"source": "simulator"}).status_code == 200
+
+
+def test_map_import_validation(client):
+    import base64
+
+    bad = client.post("/mapping/import", json={"name": "x", "yaml": "resolution: 0.05\norigin: [0, 0, 0]\n",
+                                               "pgm_base64": base64.b64encode(b"P6 nope").decode()})
+    assert bad.status_code == 422 and bad.json()["error"]["code"] == "invalid_map"
+    pgm = b"P5\n4 2\n255\n" + bytes([254, 254, 0, 205, 254, 254, 254, 205])
+    ok = client.post("/mapping/import", json={"name": "tiny", "yaml": "image: t.pgm\nresolution: 0.5\norigin: [0, 0, 0]\n",
+                                              "pgm_base64": base64.b64encode(pgm).decode()})
+    assert ok.status_code == 200
+    m = client.get("/mapping?which=imported").json()
+    # First image row is the top of the map: it becomes the last row in map order.
+    assert m["cells"] == ["fffu", "ffou"]
+
+
+def test_command_endpoints(client):
+    places = client.get("/places").json()
+    assert any(p["key"] == "reception" for p in places["places"])
+    rec = client.post("/commands/interpret", json={"text": "Robot ko reception tak le jao"}).json()
+    assert rec["status"] == "awaiting_confirmation" and rec["language"] == "hi-Latn"
+    done = client.post(f"/commands/{rec['id']}/confirm").json()
+    assert done["status"] == "executed"
+    assert client.post(f"/commands/{rec['id']}/confirm").status_code == 409  # not pending any more
+    wait_for(client, {"navigating"})
+    stop = client.post("/commands/interpret", json={"text": "रुको", "source": "speech"}).json()
+    assert stop["status"] == "executed"
+    assert client.get("/telemetry").json()["mission"]["status"] == "stopped"
+    hist = client.get("/commands").json()["commands"]
+    assert [h["transcript"] for h in hist][-1] == "रुको"
+    assert client.post("/commands/interpret", json={"text": "x" * 301}).status_code == 422
+
+
+def test_speech_endpoint_validation(client):
+    status = client.get("/speech/status").json()
+    assert status["engine"].startswith("faster-whisper")
+    r = client.post("/speech/transcribe", content=b"abc", headers={"Content-Type": "text/plain"})
+    assert r.status_code == 415
+    r = client.post("/speech/transcribe?language=fr", content=b"abc", headers={"Content-Type": "audio/wav"})
+    assert r.status_code == 422
+
+
+def test_emergency_stop_always_succeeds(client):
+    r = client.post("/navigation/estop")
+    assert r.status_code == 200 and "not moving" in r.json()["message"]
+    client.post("/target", json={"x": 18.5, "y": 6})
+    client.post("/navigate")
+    wait_for(client, {"navigating"})
+    r = client.post("/navigation/estop").json()
+    assert r["status"] == "stopped" and "halted" in r["message"]

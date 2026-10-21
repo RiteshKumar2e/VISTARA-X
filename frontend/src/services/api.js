@@ -42,9 +42,9 @@ function normalise(error) {
   });
 }
 
-async function request(method, url, data) {
+async function request(method, url, data, extra = {}) {
   try {
-    const res = await client.request({ method, url, data });
+    const res = await client.request({ method, url, data, ...extra });
     return res.data;
   } catch (error) {
     throw normalise(error);
@@ -61,6 +61,8 @@ export const api = {
   pause: () => request('post', '/navigation/pause'),
   resume: () => request('post', '/navigation/resume'),
   stop: () => request('post', '/navigation/stop'),
+  // Always succeeds: halts the robot whether or not a mission is running.
+  emergencyStop: () => request('post', '/navigation/estop'),
   reset: (scenario) => request('post', '/simulation/reset', { scenario }),
   configure: (params) => request('post', '/simulation/config', params),
   addObstacle: (x, y, opts = {}) => request('post', '/obstacles', { x, y, ...opts }),
@@ -75,4 +77,28 @@ export const api = {
   selectModels: (body) => request('post', '/models/select', body),
   removeObstacle: (id) => request('delete', `/simulation/obstacles/${encodeURIComponent(id)}`),
   frameUrl: (seq) => `${API_BASE_URL}/perception/frame?f=${seq}`,
+  // Mapping and localisation
+  mapping: (which = 'slam') => request('get', `/mapping?which=${which}`),
+  explore: () => request('post', '/mapping/explore'),
+  mappingControl: (body) => request('post', '/mapping/control', body),
+  setPlannerMap: (source) => request('post', '/mapping/planner', { source }),
+  saveMap: (name) => request('post', '/mapping/save', { name }),
+  loadMap: (name) => request('post', '/mapping/load', { name }),
+  importMap: (name, yaml, pgmBase64) => request('post', '/mapping/import', { name, yaml, pgm_base64: pgmBase64 }),
+  exportUrl: (file) => `${API_BASE_URL}/mapping/export?file=${file}`,
+  // Places, commands and speech
+  places: () => request('get', '/places'),
+  interpret: (text, source = 'text', { trusted = false, speech = null } = {}) =>
+    request('post', '/commands/interpret', { text, source, trusted, ...(speech ? { speech } : {}) }),
+  confirmCommand: (id) => request('post', `/commands/${id}/confirm`),
+  cancelCommand: (id) => request('post', `/commands/${id}/cancel`),
+  commands: () => request('get', '/commands'),
+  speechStatus: () => request('get', '/speech/status'),
+  speechLoad: () => request('post', '/speech/load', undefined, { timeout: 120000 }),
+  // Whisper on a laptop CPU takes seconds per clip (longer on first use while the model loads).
+  transcribe: (blob, language) =>
+    request('post', `/speech/transcribe${language ? `?language=${language}` : ''}`, blob, {
+      headers: { 'Content-Type': blob.type || 'audio/webm' },
+      timeout: 120000,
+    }),
 };

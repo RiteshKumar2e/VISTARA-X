@@ -1,0 +1,401 @@
+/* Command console, mapping panel, alert centre and accessibility modes. */
+
+/* ---------- Accessibility modes (set on <html> by the alert settings) ---------- */
+html.a11y-large {
+  font-size: 118.75%; /* every size in the app is in rem */
+}
+html.a11y-contrast {
+  --color-bg: #ffffff;
+  --color-surface: #ffffff;
+  --color-surface-muted: #f1f1f1;
+  --color-border: #4d4d4d;
+  --color-border-strong: #1a1a1a;
+  --color-text: #000000;
+  --color-text-muted: #1f1f1f;
+  --color-text-faint: #333333;
+  --color-accent: #00504c;
+  --color-accent-strong: #003b38;
+  --color-success: #11501a;
+  --color-warning: #6b3d00;
+  --color-danger: #8a1510;
+}
+html.a11y-contrast :focus-visible {
+  outline: 3px solid #000 !important;
+  outline-offset: 2px !important;
+  box-shadow: 0 0 0 6px #ffd400 !important;
+}
+html.a11y-contrast .panel {
+  border-width: 2px;
+}
+
+/* ---------- Alert centre ---------- */
+.alert-centre {
+  display: grid;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+.alert-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  border: 2px solid currentColor;
+  font-size: var(--text-base);
+}
+.alert-banner > .icon {
+  flex: none;
+  margin-top: 2px;
+}
+.alert-banner > div {
+  flex: 1;
+  min-width: 0;
+}
+.alert-banner strong {
+  display: block;
+  font-size: var(--text-lg);
+}
+.alert-banner p {
+  margin: 2px 0 0;
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+}
+.alert-danger {
+  color: var(--color-danger);
+  background: var(--color-danger-soft);
+}
+.alert-warning {
+  color: var(--color-warning);
+  background: var(--color-warning-soft);
+}
+.alert-success {
+  color: var(--color-success);
+  background: var(--color-success-soft);
+}
+.alert-info {
+  color: var(--color-accent);
+  background: var(--color-accent-soft);
+}
+.alert-settings,
+.alert-history {
+  font-size: var(--text-sm);
+}
+.alert-settings summary,
+.alert-history summary {
+  cursor: pointer;
+  padding: 4px 0;
+  min-height: 32px;
+}
+.alert-settings-body {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-2) 0 var(--space-3);
+  max-width: 40rem;
+}
+.alert-history ol {
+  margin: var(--space-1) 0 0;
+  padding-left: var(--space-5);
+}
+.alert-tag {
+  display: inline-block;
+  padding: 0 6px;
+  border-radius: var(--radius-sm);
+  border: 1px solid currentColor;
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.alert-tag-danger {
+  color: var(--color-danger);
+}
+.alert-tag-warning {
+  color: var(--color-warning);
+}
+.alert-tag-success {
+  color: var(--color-success);
+}
+.alert-tag-info {
+  color: var(--color-accent);
+}
+
+/* ---------- Command console ---------- */
+.commands {
+  display: grid;
+  gap: var(--space-3);
+}
+.estop-row {
+  display: grid;
+  gap: var(--space-1);
+}
+.estop-row p {
+  margin: 0;
+}
+.btn-estop {
+  width: 100%;
+  min-height: 52px;
+  font-size: var(--text-lg);
+  font-weight: 700;
+  justify-content: center;
+}
+.cmd-form,
+.cmd-select {
+  display: grid;
+  gap: var(--space-1);
+}
+.cmd-form > label,
+.cmd-select > label {
+  font-weight: 600;
+  font-size: var(--text-sm);
+}
+.cmd-input-row {
+  display: flex;
+  gap: var(--space-2);
+}
+.cmd-input-row input,
+.cmd-input-row select {
+  flex: 1;
+  min-width: 0;
+  min-height: 40px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+}
+.cmd-examples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: var(--space-1);
+}
+.chip-btn {
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface-muted);
+  color: var(--color-text);
+  border-radius: 999px;
+  padding: 4px 10px;
+  min-height: 30px;
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+  text-align: left;
+}
+.chip-btn:hover:not(:disabled) {
+  border-color: var(--color-accent);
+}
+.chip-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.cmd-voice {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: var(--border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-muted);
+}
+.cmd-voice p {
+  margin: 0;
+}
+.mic-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
+.btn-mic {
+  min-height: 44px;
+}
+.btn-mic.on {
+  background: var(--color-danger);
+  border-color: var(--color-danger);
+  color: #fff;
+}
+.mic-state {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  min-width: 0;
+}
+.rec-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--color-danger);
+}
+.level {
+  display: inline-block;
+  width: 90px;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--color-border);
+  overflow: hidden;
+}
+.level span {
+  display: block;
+  height: 100%;
+  background: var(--color-accent);
+}
+.cmd-options {
+  display: grid;
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+}
+.cmd-card {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-strong);
+  border-left-width: 5px;
+  background: var(--color-surface);
+}
+.cmd-ok {
+  border-left-color: var(--color-success);
+}
+.cmd-warn {
+  border-left-color: var(--color-warning);
+}
+.cmd-bad {
+  border-left-color: var(--color-danger);
+}
+.cmd-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--space-1) var(--space-2);
+}
+.cmd-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 600;
+  font-size: var(--text-sm);
+}
+.cmd-status-ok {
+  color: var(--color-success);
+}
+.cmd-status-warn {
+  color: var(--color-warning);
+}
+.cmd-status-bad {
+  color: var(--color-danger);
+}
+.cmd-status-muted {
+  color: var(--color-text-muted);
+}
+.cmd-transcript {
+  margin: 0;
+  font-size: var(--text-lg);
+  overflow-wrap: anywhere;
+}
+.cmd-facts {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  font-size: var(--text-sm);
+}
+.cmd-facts div {
+  display: grid;
+  grid-template-columns: 7.5rem minmax(0, 1fr);
+  gap: var(--space-2);
+}
+.cmd-facts dt {
+  color: var(--color-text-muted);
+}
+.cmd-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.cmd-response {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--color-accent-soft);
+  overflow-wrap: anywhere;
+}
+.cmd-history {
+  margin: 0;
+  padding-left: var(--space-5);
+  display: grid;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  max-height: 22rem;
+  overflow-y: auto;
+}
+.cmd-history li {
+  overflow-wrap: anywhere;
+}
+.cmd-history-reply {
+  display: block;
+  color: var(--color-text-muted);
+}
+
+/* ---------- Mapping panel ---------- */
+.mapping {
+  display: grid;
+  gap: var(--space-3);
+}
+.map-view-toggle {
+  justify-self: start;
+  flex-wrap: wrap;
+}
+.map-canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  image-rendering: pixelated;
+  border: var(--border);
+  border-radius: var(--radius-sm);
+  background: #c9cdd2;
+}
+.map-kv {
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  column-gap: var(--space-4);
+}
+.map-kv .kv {
+  display: block;
+}
+.map-kv .kv dd {
+  text-align: left;
+  margin-top: 2px;
+}
+.map-form,
+.map-import {
+  display: grid;
+  gap: var(--space-2);
+  margin: var(--space-2) 0;
+}
+.map-import {
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  align-items: end;
+}
+.map-import input[type='file'] {
+  max-width: 100%;
+  font-size: var(--text-sm);
+}
+.map-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+}
+.btn-sm {
+  min-height: 30px;
+  padding: 2px 10px;
+  font-size: var(--text-sm);
+}
+.sw-dashed {
+  background: repeating-linear-gradient(90deg, #8a8f96 0 4px, transparent 4px 7px);
+}
+[id='commands'],
+[id='mapping'],
+[id='alerts'] {
+  scroll-margin-top: 72px;
+}

@@ -446,12 +446,26 @@ export const MARKET = {
   note: 'Qualitative assessment from the team’s pitch deck. No market figures were sourced or verified for this prototype.',
 };
 
+export const APPLICATIONS = {
+  note: 'Intended applications. VISTARA-X runs in simulation only; none of these uses has been tested or validated in a real building.',
+  rows: [
+    ['Hospital and clinic delivery', 'Named destinations requested by voice or text (the demo map uses places such as “reception” and “storage room”), safety stops around people, an honest Blocked report when a corridor is closed.'],
+    ['Warehouse and factory logistics', 'Mapping an area, planning on the map, replanning around pallets and people, all with live telemetry.'],
+    ['University campuses and institutions', 'Text and voice commands in English and Hindi, so visitors and staff can send the robot without training.'],
+    ['Indoor visitor assistance', 'Destination selector and plain-language responses (“Navigating to the reception”).'],
+    ['Deaf and hard-of-hearing users', 'Text-first operation: typed commands, persistent transcripts, large visual alerts and an accessible display mode. No step needs audio.'],
+  ],
+};
+
 export const LIMITATIONS = [
   'Everything runs in simulation. No physical robot, camera, depth sensor or LiDAR is connected.',
-  'Collision avoidance uses ground-truth obstacle geometry from the simulator, not camera detections.',
+  'The planner uses simulator geometry by default; it can also plan on the simulated SLAM map or an imported map. The final safety veto always uses simulator geometry, and camera detections do not drive collision avoidance.',
+  'The SLAM map comes from a simulated LiDAR and odometry. Live SLAM with ROS 2 on real sensors is not set up in this prototype.',
+  'Speech recognition runs Whisper base on the CPU and takes about 3-6 s per command on a 4-core laptop. Hindi speech recognition has not been checked with recorded Hindi speech; Hindi text commands are tested.',
+  'Sign-language recognition is not implemented. Deaf and hard-of-hearing users are supported through text input and visual output.',
   'The camera image is a simple synthetic render. YOLOv8 is trained on real photographs and may detect little in it; its results are shown unedited.',
   'Robot motion is kinematic (no wheel slip or dynamics). PyBullet is used for collision and rendering, not for driving the robot.',
   'The target is chosen by the operator; automatic target recognition from vision is not implemented.',
   'Moving obstacles are avoided at their current position; their motion is not predicted.',
-  'No accuracy, latency or success-rate benchmarks have been measured, so none are claimed.',
+  'Apart from the SLAM pose error shown live (simulation only), no accuracy or success-rate benchmarks have been measured over many runs, so none are claimed.',
 ];

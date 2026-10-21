@@ -73,6 +73,34 @@ class OccupancyGrid:
         self.caution = soft & ~blocked
         return self
 
+    def build_from_mask(
+        self,
+        occupied: np.ndarray,
+        unknown: np.ndarray,
+        inflation: float,
+        unknown_blocked: bool,
+        caution: float = 0.25,
+    ) -> "OccupancyGrid":
+        """Planning grid from a map (SLAM-built or imported) instead of obstacle geometry.
+        ``occupied``/``unknown`` are boolean masks on this grid. Unknown cells are either
+        treated as obstacles (imported maps: the map claims to be complete) or left
+        traversable (live SLAM: the robot discovers them with its LiDAR as it drives)."""
+        from scipy.ndimage import distance_transform_edt
+
+        edge = np.minimum.reduce([self._cx, self._cy, self.width - self._cx, self.height - self._cy])
+        solid = occupied | unknown if unknown_blocked else occupied
+        if solid.any():
+            # Distance from each cell centre to the nearest solid cell's edge.
+            dist = distance_transform_edt(~solid) * self.resolution - self.resolution / 2
+            dist[solid] = 0.0
+        else:
+            dist = np.full(solid.shape, np.inf)
+        self.occupied = solid.copy()
+        self.blocked = (dist < inflation) | solid | (edge < inflation)
+        soft = (dist < inflation + caution) | (edge < inflation + caution)
+        self.caution = soft & ~self.blocked
+        return self
+
     def nearest_free(self, row: int, col: int, max_radius: int = 6) -> tuple[int, int] | None:
         if self.is_free(row, col):
             return row, col

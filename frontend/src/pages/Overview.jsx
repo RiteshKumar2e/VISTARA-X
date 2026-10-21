@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { MissionProcess } from '../components/MissionProcess';
 import { StatusTag } from '../components/StatusTag';
-import { LIMITATIONS, MARKET, MISSION, PROBLEM, SOLUTION, TEAM } from '../content/deck';
+import { APPLICATIONS, LIMITATIONS, MARKET, MISSION, PROBLEM, SOLUTION, TEAM } from '../content/deck';
 import { usePageMeta } from '../hooks/usePageMeta';
 
 export default function Overview() {
@@ -171,6 +171,31 @@ export default function Overview() {
         </div>
       </section>
 
+      <section className="section" id="applications" aria-labelledby="apps-h">
+        <div className="section-head">
+          <p className="eyebrow">Real-world applications</p>
+          <h2 id="apps-h">Who it is designed for</h2>
+          <p className="muted small">{APPLICATIONS.note}</p>
+        </div>
+        <div className="table-wrap">
+          <table className="data data-lg">
+            <thead>
+              <tr>
+                <th scope="col">Setting</th>
+                <th scope="col">What the prototype demonstrates for it</th>
+              </tr>
+            </thead>
+            <tbody>
+              {APPLICATIONS.rows.map(([where, what]) => (
+                <tr key={where}>
+                  <th scope="row">{where}</th>
+                  <td>{what}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
 
       <section className="section" id="team" aria-labelledby="team-h">
         <div className="section-head">

@@ -2,9 +2,9 @@
 
 **Vision-Based Autonomous Navigation System** — *Beyond Seeing. Into Understanding.*
 
-VISTARA-X is a simulation-first autonomous robotics platform. A simulated robot perceives its environment through a rendered camera, builds an occupancy grid, plans a collision-free route with A\*, follows it with a pure-pursuit controller, and replans in real time when obstacles block its path. A React dashboard visualises the live mission using authoritative telemetry streamed from a FastAPI backend.
+VISTARA-X is a simulation-first autonomous robotics platform. A simulated robot maps its surroundings with LiDAR-based SLAM, understands spoken or typed commands in English and Hindi, plans a collision-free route with A\*, follows it with a pure-pursuit controller, and replans in real time when obstacles block its path. Every step can be operated without audio. A React dashboard visualises the live mission using authoritative telemetry streamed from a FastAPI backend.
 
-> **Mission:** Navigate to the target while avoiding obstacles.
+> **Mission:** Understand the environment, understand the user's intention, and navigate safely toward the requested destination.
 
 ---
 
@@ -15,6 +15,9 @@ VISTARA-X is a simulation-first autonomous robotics platform. A simulated robot 
 - [Architecture](#architecture)
 - [Getting started](#getting-started)
 - [Configuration](#configuration)
+- [Mapping and localisation](#mapping-and-localisation)
+- [Voice and text commands](#voice-and-text-commands)
+- [Accessibility](#accessibility)
 - [Perception and model weights](#perception-and-model-weights)
 - [Testing](#testing)
 - [Deployment and security](#deployment-and-security)
@@ -50,6 +53,10 @@ The system runs entirely in simulation, with module boundaries designed for late
 | Telemetry | Versioned WebSocket stream with sequence numbers and bounded queues | Implemented |
 | 3D digital twin | Three.js warehouse (racking, pallets, crates, barriers, person), differential-drive robot with wheels, casters and camera mast, LiDAR points, route ribbons, orbit/top/follow cameras; 2D plan view and automatic fallback | Implemented |
 | Dashboard | Mission overview with quick controls and health, simulator, controls, perception, sensors, navigation (occupancy grid, route validity, replanning history), telemetry, event log, system health, guided and blocked-route demos | Implemented |
+| Mapping and localisation | Log-odds occupancy mapping from the simulated LiDAR; wheel-odometry prediction corrected by correlative scan matching (2D SLAM); autonomous frontier exploration; planning on the live SLAM map or an imported map | Implemented (simulated sensors); ROS 2 live SLAM not set up |
+| Map files | Save, load, export and import maps in ROS map_server format (PGM + YAML) | Implemented |
+| Voice and text commands | English, Hindi and Hinglish; local Whisper speech recognition; deterministic intent parser; named destinations; validation and confirmation before moving; spoken and written responses | Implemented |
+| Accessibility | Text-first operation, persistent transcripts, visual alert centre, accessible display mode (large text, high contrast, persistent alerts), keyboard operation | Implemented |
 | Trap-the-robot challenge | Interactive game: the viewer places up to 5 barriers while the robot drives; the robot either replans through every gap or reports *Blocked*, with the collision count shown live | Implemented |
 
 ## Architecture
@@ -67,7 +74,9 @@ The system runs entirely in simulation, with module boundaries designed for late
 │  ├─ occupancy grid + A*          ├─ YOLOv8 / fallback     │
 │  ├─ pure-pursuit controller      ├─ model registry + NMS  │
 │  ├─ simulated sensor suite       └─ scene understanding   │
-│  └─ PyBullet collision checks                             │
+│  ├─ SLAM: scan matching + map    Request threads          │
+│  ├─ frontier exploration         ├─ command parser        │
+│  └─ PyBullet collision checks    └─ Whisper speech-to-text│
 └───────────────────────────────────────────────────────────┘
 ```
 
@@ -97,7 +106,7 @@ cd backend
 python -m venv .venv
 .venv\Scripts\activate            # macOS/Linux: source .venv/bin/activate
 pip install -r requirements.txt
-pip install -r requirements-optional.txt   # optional: PyBullet and YOLOv8
+pip install -r requirements-optional.txt   # optional: PyBullet, YOLOv8, Whisper
 python -m uvicorn app.main:app --reload --port 8000
 ```
 
@@ -129,6 +138,13 @@ Interactive reference at `http://localhost:8000/docs` (development). All respons
 | `POST /simulation/reset` | Load a scenario: `warehouse`, `slalom`, `enclosed` |
 | `POST /simulation/obstacles`, `DELETE /simulation/obstacles/{id}` | Add or remove an obstacle; `{"label":"person","patrol_to":{"x","y"}}` adds a walking person (`POST /obstacles/{id}/move` moves one) |
 | `POST /obstacles/inject` | Drop a barrier across the active route (demo) |
+| `POST /navigation/estop` | Emergency stop: always succeeds, with or without a mission |
+| `GET /mapping?which=slam\|imported` | Map cells, resolution, origin, pose estimate, trajectory, last scan, localisation status |
+| `POST /mapping/explore` · `/mapping/control` · `/mapping/planner` | Start exploration; pause/resume/clear mapping; choose the planner map (`simulator`, `slam`, `imported`) |
+| `GET /mapping/export?file=pgm\|yaml`, `POST /mapping/save` · `/load` · `/import` | ROS map_server files: download, save, load, import (`{name, yaml, pgm_base64}`) |
+| `GET /places` | Named destinations of the current scenario with Hindi names and aliases |
+| `POST /commands/interpret` · `/commands/{id}/confirm` · `/cancel`, `GET /commands` | Command pipeline and transcript history |
+| `GET /speech/status`, `POST /speech/load`, `POST /speech/transcribe?language=en\|hi` | Whisper status, model warm-up, transcription of a raw audio body |
 | `POST /models/select`, `POST /sensors/configure`, `POST /perception/config` | Model policy, sensor settings, frame processing |
 | `WS /ws/telemetry` | Versioned state stream at 10 Hz with sequence numbers |
 
@@ -166,6 +182,93 @@ cp frontend/.env.example frontend/.env
 | `VISTARA_YOLO_WEIGHTS` | `models/yolov8n.pt` | Path to YOLOv8 weights |
 | `VISTARA_YOLO_CONFIDENCE` | `0.25` | Detection confidence threshold |
 | `VISTARA_LOG_LEVEL` | `INFO` | Logging verbosity |
+| `VISTARA_MAPS_DIR` | `backend/maps` | Where saved maps (PGM + YAML) are stored |
+| `VISTARA_WHISPER_MODEL` | `base` | Whisper size: `tiny`, `base`, `small`, `medium` |
+
+## Mapping and localisation
+
+All mapping in this prototype is **simulation-generated**: the inputs are the simulated LiDAR and wheel odometry, and the result is labelled as such in the dashboard and API.
+
+### How the map is built
+
+1. **Prediction.** Every tick the pose estimate moves by the wheel-odometry increment (odometry has slip noise, so on its own it drifts).
+2. **Correction.** For every LiDAR scan (10 Hz) a correlative scan matcher searches ±16 cm and ±4° around the prediction, coarse then fine, for the pose whose scan end points best fit the obstacles already mapped (a likelihood field with bilinear interpolation).
+3. **Mapping.** The scan is fused into a 0.1 m log-odds occupancy grid at the corrected pose: cells along each ray become more likely free, the cell at the end of a ray more likely occupied, and untouched cells stay unknown.
+4. **Status.** Localisation quality comes from the match score (no ground truth involved). Because this is a simulation, the pose error against the true pose is also shown, for evaluation only.
+
+There is no loop closure, so error can still grow on very long runs. Measured on a 14-goal loop in the warehouse (2,212 scans): the SLAM pose error stayed between 8 and 10 cm (maximum 19 cm), while odometry alone drifted to 140 cm.
+
+**Exploration.** *Explore and map automatically* drives the robot to frontiers (free cells next to unknown cells) on the SLAM map until none are reachable. In the warehouse it maps about 83–90% of the area in about 30 s of simulated time with no collisions.
+
+### Mapping modes
+
+| Mode | Status | How |
+|---|---|---|
+| **A: Live SLAM on real sensors (ROS 2)** | Not available in this environment | Needs ROS 2, SLAM Toolbox, Nav2 and a robot or a recorded bag; see below |
+| **B: Simulated mapping** | Implemented | Default: the live SLAM map above, from simulated sensors |
+| **C: Existing map import** | Implemented | ROS map_server PGM + YAML: dashboard *Import map*, or `POST /mapping/import` |
+
+### Planning on a map
+
+The planner can use *simulator geometry* (default), the *live SLAM map*, or an *imported map* (Mapping panel > *Planner uses*, or `POST /mapping/planner`).
+
+- **Live SLAM map:** unknown space is traversable, and obstacles appear as the LiDAR maps them. The route is re-checked every tick, so newly mapped obstacles cause a stop and a replan.
+- **Imported map:** unknown space is treated as an obstacle. Obstacles that are not in the map (people, added objects) come from live LiDAR returns.
+- In every mode the final safety veto still uses simulator geometry.
+
+### Map files
+
+- Saved maps use the ROS map_server format: PGM (occupied 0, free 254, unknown 205; first row = top of the map) and YAML (`resolution`, `origin`, `negate`, `occupied_thresh`, `free_thresh`).
+- The map frame is the simulator's world frame in metres, with origin (0, 0) at the bottom-left corner.
+- An imported map is interpreted with its own resolution, origin and thresholds.
+- A floor-plan picture is **not** a metric map until it has been converted to an occupancy grid at a known scale. Nothing here does that automatically.
+- `backend/maps/warehouse_demo` is a documented demo map made by exploration (see [backend/maps/README.md](backend/maps/README.md)).
+
+### Mode A: live SLAM with ROS 2 (setup guide, not part of this prototype)
+
+ROS 2 is not installed on the development machine, so no live SLAM on real sensors has been run or validated. To add it:
+
+1. Install ROS 2 Humble or Jazzy on Ubuntu 22.04/24.04 (Windows support is limited). Then run `sudo apt install ros-<distro>-slam-toolbox ros-<distro>-navigation2 ros-<distro>-nav2-bringup`.
+2. Publish `/scan` (`sensor_msgs/LaserScan`), `/odom` and the `odom → base_link → laser` transforms from the robot or a recorded bag.
+3. Run `ros2 launch slam_toolbox online_async_launch.py`, then save with `ros2 run nav2_map_server map_saver_cli -f mymap`.
+4. Import `mymap.pgm` and `mymap.yaml` into VISTARA-X (Mode C). A ROS 2 bridge that streams `/map` and the robot pose into this backend live is future work.
+
+## Voice and text commands
+
+The command workflow:
+
+**microphone or keyboard → speech recognition → language → transcript → intent → destination → validation → confirmation → navigation → response**
+
+- **Speech recognition:** [faster-whisper](https://github.com/SYSTRAN/faster-whisper) runs Whisper locally on the backend, so audio is not sent to a cloud service.
+  - The browser records a clip of up to 8 s; PyAV decodes it, so ffmpeg is not required.
+  - The `base` model (default) takes about 3 s per command with a language hint and about 6 s with automatic detection on a 4-core laptop CPU. `small` is more accurate, especially for Hindi, but about 4× slower.
+  - Whisper often labels spoken Hindi as Urdu; such clips are re-transcribed as Hindi so the text comes out in Devanagari.
+  - Empty or silent clips and unsupported languages are reported, never guessed.
+  - *Browser speech recognition* is offered as an alternative where the browser supports it. It is labelled as online, because Chrome sends the audio to Google.
+- **Intent parsing is deterministic.** Keyword rules cover English, Hindi (Devanagari) and Hinglish; no language model is involved.
+  - Intents: go to a place, return to the start, stop, pause, resume. Constraints: *safe/carefully/सुरक्षित* (0.30 m margin, max 0.6 m/s) and *slowly/धीरे* (max 0.5 m/s).
+  - A stop word anywhere in the text wins.
+- **Destinations** come only from the scenario's named places (`GET /places`, e.g. Reception / रिसेप्शन, Storage room / स्टोर रूम, Charging dock, Loading bay, Exit, Starting point) or from explicit coordinates. Unknown or ambiguous places get a clarification question listing the known places.
+- **Validation:** the target must be valid on the current planner map, and A\* checks whether a route exists. A new destination waits for **Confirm** unless *Trusted mode* is on. A known place with no route is never started automatically; if confirmed, the robot reports *Blocked* without moving.
+- **Stop, pause and resume** run immediately. **Emergency stop** (`POST /navigation/estop`) is a separate button that does not depend on speech, language or parsing, and always succeeds.
+- **Responses** are written in the language of the command (English, Hindi or Hinglish) and can optionally be spoken with the browser's text-to-speech. The text is always on screen, and the transcript history is kept for the session.
+
+Examples: *Robot ko reception tak le jao* · *Take the robot to the storage room* · *Find a safe route to the exit* · *रुको* · *थोड़ा रुको* · *फिर से चलो* · *वापस जाओ*.
+
+**Model setup:** `pip install faster-whisper` is in `requirements-optional.txt`. The model downloads once on first use (base ~145 MB, small ~480 MB) into the Hugging Face cache. Choose the size with `VISTARA_WHISPER_MODEL`, and click *Speak a command* once before the demo, or call `POST /speech/load`, so that model loading does not delay the first command.
+
+## Accessibility
+
+A deaf or hard-of-hearing user can run every step without audio:
+
+- **Commands without speech:**
+  - Typed commands, example chips and a destination selector.
+  - A recording level meter, so the microphone state is visible without sound.
+  - A persistent transcript history; spoken responses are optional and always captioned.
+- **Visual alerts:** the alert centre shows obstruction, replanning, *Blocked*, collision, error and goal-reached alerts as text with an icon, never by colour or sound alone. *Blocked* and *Error* stay visible for as long as the state lasts.
+- **Accessible mode** (Display and alert settings) combines larger text (all sizes scale), high contrast with a strong focus ring, and alerts that stay until dismissed. Each setting can also be changed on its own, including how long alerts stay (5, 10 or 30 s, or until dismissed).
+- **Keyboard and screen readers:** every control is keyboard-operable with a visible focus. Live regions announce command results and alerts, and Hindi text is marked with `lang="hi"`.
+- **Sign language:** recognition is **not** implemented. It would need a validated sign-language model and is listed as future work.
 
 ## Sensors
 
@@ -239,29 +342,32 @@ The end-to-end suite accepts `E2E_BACKEND_URL` and `E2E_FRONTEND_URL` to target 
 | WebSocket closes immediately | The frontend origin is missing from `VISTARA_CORS_ORIGINS`. |
 | PyBullet fails to install on Windows | Install the *Desktop development with C++* build tools, or continue without it; the analytic fallback is used and reported. |
 | YOLOv8 option is disabled | Weights are missing or `ultralytics` is not installed. |
+| *Speak a command* is disabled or says Whisper unavailable | `pip install faster-whisper`; the first use downloads the model (internet needed once). Typed commands always work. |
+| Microphone permission denied | Allow the microphone for the site in the browser, or type the command. |
+| Voice commands are slow | Whisper runs on the CPU: pick the spoken language (skips detection) or use `VISTARA_WHISPER_MODEL=tiny`. |
 | Robot moves slowly or telemetry shows *Delayed* on a low-power laptop | The browser is competing with the simulation for CPU. Tick **Demo mode** in the mission overview (20 fps 3D without shadows, robot speed 0.6 m/s; unticking restores the previous speed), untick **Motion effects** or use the **Plan** view; close other heavy tabs. The backend raises itself to above-normal priority on Windows (`VISTARA_HIGH_PRIORITY`). |
 
 ## Judge demonstration guide
 
-No code edits are needed. Start both applications (see *Getting started*) and open `http://localhost:5173/mission`. On a slower laptop, or when presenting, tick **Demo mode** in the mission overview first.
+No code edits are needed. Start both applications (see *Getting started*) and open `http://localhost:5173/mission`. On a slower laptop, tick **Demo mode** in the mission overview. Before the demo, click **Speak a command** once so the Whisper model is loaded.
 
-| # | Action | What to verify |
-|---|---|---|
-| 1 | The warehouse loads (or click **Reset** / **Load** with *Warehouse aisle*). | 3D racking, pallets, a patrolling person and the robot at its start pose (1.5, 6.0). |
-| 2 | Inspect the robot: **Follow robot** camera, toggle **LiDAR scan** and **Camera overlay**. | Wheels, casters and camera mast; LiDAR returns on surfaces facing the robot; the Sensors panel shows every sensor *Live (simulated)*. |
-| 3 | **Select destination** and click the far end of the aisle (or enter `18.5`, `6`), then **Start mission**. | Status *Planning* then *Navigating*; the A\* route draws on the floor; Navigation shows *Route validity: Valid*. |
-| 4 | Watch the robot. | Pose, heading, speed and remaining distance update in Telemetry; wheels turn. |
-| 5 | Click **Drop obstacle on route** (or use *Add obstacle* and click on the route). | A barrier appears across the route. |
-| 6 | Safety response. | Status *Replanning*; the robot stops; the event log says *Route obstructed by user-N; robot stopped, replanning*; the blocking obstacle is outlined. |
-| 7 | Alternative route. | A new route is drawn (the old one fades as a dashed line); the event says *route validated (N samples clear)*; Navigation lists the replan. |
-| 8 | Completion. | *Goal reached* only when the robot is within 0.2 m of the target; collisions stay 0. |
-| 9 | Blocked scenario: click **Run blocked-route demo** in the Guided demo card (or load *Enclosed bay*, set target `16, 6`, Start). | — |
-| 10 | Verify the honest failure. | Status *Blocked* with *No collision-free route to the target exists*; the robot does not move (distance travelled 0.00 m). |
-| 11 | Click **Reset** and repeat. | Same start pose and deterministic scenario every time. |
+| # | Action | What to verify | Uses |
+|---|---|---|---|
+| 1 | Open the console; the warehouse 3D environment loads. | Racking, pallets, a patrolling person, the robot at (1.5, 6.0); the HUD shows map %, SLAM quality and pose error. | Simulation |
+| 2 | Mapping panel: click **Explore and map automatically** (or load the documented map: *Save, load…* > `warehouse_demo` > **Load**). | The robot drives to frontiers; the map fills in (free, occupied, unknown); the estimated trajectory follows the true one; *Exploration finished* at about 83–90%. | Simulated LiDAR and odometry, SLAM; or imported map |
+| 3 | Inspect the map. | Occupancy grid, robot pose and heading, trajectory, latest scan (orange), localisation *Good*, pose error in cm, resolution 0.1 m, origin (0, 0). | Simulation |
+| 4 | Commands panel: type **Robot ko reception tak le jao** (or press **Speak a command** and say it, or say *Take the robot to the storage room*). | — | Text, or local Whisper |
+| 5 | Read the command card. | Transcript, language (*Hinglish* / *Hindi* / *English*), intent, resolved destination with coordinates, *Route found, N m*, robot response in the same language. Nothing moves yet. | Deterministic parser |
+| 6 | Click **Confirm and go**. | Status *Planning* → *Navigating*; the A\* route appears in 3D and on the map. | Simulation |
+| 7 | Click **Drop obstacle on route** (Mission controls). | The robot stops; status *Replanning*; a visual alert *Route blocked: robot stopped and replanning*; the event log names the obstacle. | Simulation, safety layers |
+| 8 | Alternative route. | A new validated route; Navigation lists the replan. | Simulation |
+| 9 | Completion. | *Destination reached* alert; status *Goal reached* within 0.2 m; collisions 0. | Simulation |
+| 10 | Accessible text-first run: open *Display and alert settings*, tick **Accessible mode**, then repeat 4–9 using only the keyboard (Tab to *Type a command*, type **Take the robot to the exit**, Enter, Tab to *Confirm and go*, Enter). | Large text, high contrast, alerts stay until dismissed; no step needs audio. | Text only |
+| 11 | Invalid and blocked destinations: type **Take the robot to the cafeteria**; then click **Run blocked-route demo**. | First: *I don't know that place. Known places: …* (no guessed location). Second: status *Blocked*, a red *No safe route* banner, 0.00 m travelled. | Parser; simulation |
 
-Interactive: click **Start challenge** in *Trap the robot* and hand the judge the mouse. They get 5 barriers to stop the robot; three placed across the gap between the racks at x = 15 seal it in (the robot reports *Blocked*), fewer leave a gap it finds. Collisions stay 0 either way.
+At any time **Emergency stop** (Commands panel) halts the robot directly. Interactive extra: click **Start challenge** in *Trap the robot* and hand the judge the mouse; three barriers across the gap at x = 15 seal the robot in (it reports *Blocked*), and fewer leave a gap it finds.
 
-Optional: add a *Person (walking)* across the route, switch the LiDAR off to see the fail-safe speed, or select *YOLOv8* in Detection models to run real inference on the camera frame (with `yolov8s.pt` present, choose it as the secondary model and set the policy to *cascade* or *multi*). **Run guided demo** automates steps 1–8.
+Optional: add a *Person (walking)* across the route, switch the LiDAR off to see the fail-safe speed and *No LiDAR input* in the Mapping panel, or select *YOLOv8* in Detection models to run real inference on the camera frame. **Run guided demo** automates the obstacle-and-replan part.
 
 ### Mission states
 
@@ -271,21 +377,25 @@ Optional: add a *Person (walking)* across the route, switch the LiDAR off to see
 
 | Status | Capabilities |
 |---|---|
-| **Implemented** | A\* planning on an inflated occupancy grid, route validation, replanning state machine, pure-pursuit control, three-layer safety (grid route check, measured proximity, ground-truth veto), mission states, REST + WebSocket API, 3D/2D visualisation, model registry and fusion, guided and blocked demos, trap-the-robot challenge, automated tests |
-| **Simulated** | All sensors (camera, depth, LiDAR, ultrasonic, IMU, odometry), robot motion (kinematic), people and obstacles, PyBullet collision checks and rendering |
-| **Unavailable here** | Real hardware; GPU inference |
-| **Future** | Real RGB-D camera and motor-controller integration, LiDAR hardware and sensor fusion, perception-built maps (SLAM), vision-language objectives, multi-robot coordination |
+| **Implemented** | A\* planning on an inflated occupancy grid, route validation, replanning state machine, pure-pursuit control, three-layer safety (grid route check, measured proximity, ground-truth veto), 2D SLAM (odometry + scan matching + log-odds map) and frontier exploration, planning on SLAM or imported maps, ROS map_server import/export, deterministic English/Hindi/Hinglish command parser with validation and confirmation, local Whisper speech recognition, emergency stop, visual alert centre and accessible mode, mission states, REST + WebSocket API, 3D/2D visualisation, model registry and fusion, guided and blocked demos, trap-the-robot challenge, automated tests |
+| **Simulated** | All sensors (camera, depth, LiDAR, ultrasonic, IMU, odometry), and therefore every SLAM map built here; robot motion (kinematic), people and obstacles, PyBullet collision checks and rendering |
+| **Unavailable here** | Real hardware; ROS 2 live SLAM (not installed); GPU inference; a Hindi text-to-speech voice on the development machine |
+| **Future** | ROS 2 bridge (SLAM Toolbox + Nav2) and real sensors, loop closure, real RGB-D camera and motor-controller integration, sign-language recognition, vision-language objectives, multi-robot coordination |
 
 ## Limitations and roadmap
 
 **Current limitations**
 
 - All operation is simulated; no physical robot or sensors are connected.
-- Collision avoidance uses ground-truth geometry; camera detections are used for visualisation and the person-proximity speed limit only.
+- The planner uses simulator geometry by default and can plan on the SLAM or an imported map; the final safety veto always uses simulator geometry. Camera detections are used for visualisation and the person-proximity speed limit only.
+- SLAM has no loop closure; its error is measured only in simulation (against ground truth). It has never run on real sensor data.
+- Speech recognition runs on the CPU (about 3–6 s per command with `base`). English speech was tested with synthetic (TTS) audio; Hindi speech recognition has not been tested with recorded Hindi speech because no Hindi voice or recording was available. Hindi text commands are tested.
+- The command parser understands the listed phrasings and place names, not arbitrary language; anything else is answered with a clarification request.
+- Sign-language recognition is not implemented.
 - Robot motion is kinematic. PyBullet is used for collision checks and rendering, not for actuation.
 - Targets are selected by the operator; automatic target recognition is not implemented.
 - Moving obstacles are avoided at their current position; their motion is not predicted.
-- No accuracy, latency or success-rate benchmarks have been measured.
+- Apart from the SLAM pose error and Whisper processing times reported here, no accuracy, latency or success-rate benchmarks have been measured over many runs.
 - All sensors are simulated against the simulator's geometry; no physical sensor is connected.
 - The YOLO weights (`yolov8n.pt`, `yolov8s.pt`) are COCO-trained; COCO classes rarely appear in the rendered scene, so real models often report few or no detections. Inference runs on the CPU only.
 - Automated browser tests run headless with software WebGL and reduced motion; full-motion 3D was checked visually in screenshots.
@@ -294,7 +404,7 @@ Optional: add a *Person (walking)* across the route, switch the LiDAR off to see
 
 1. **Intelligent simulation** — current prototype.
 2. **Real-world prototype** — RGB/depth cameras, motor-controller integration, sim-to-real validation.
-3. **Advanced perception** — LiDAR, multi-sensor fusion, vision-language models.
+3. **Advanced perception** — ROS 2 SLAM on real LiDAR, loop closure, multi-sensor fusion, vision-language models.
 4. **Scalable autonomy** — natural-language objectives, multi-robot coordination, real-world deployment.
 
 ---
