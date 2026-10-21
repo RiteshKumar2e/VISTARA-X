@@ -73,7 +73,15 @@ export function AlertCentre({ telemetry, settings }) {
       seen.current = ids; // don't replay history on first load
       return;
     }
-    const fresh = events.filter((e) => !seen.current.has(e.id) && ALERTS[e.type] && (e.type !== 'explore' || e.level === 'success'));
+    // Routine changes (frontiers, predictive speed adjustments) stay in the event log and the
+    // Prediction panel; only warnings and outcomes become banners.
+    const fresh = events.filter(
+      (e) =>
+        !seen.current.has(e.id) &&
+        ALERTS[e.type] &&
+        (e.type !== 'explore' || e.level === 'success') &&
+        (e.type !== 'prediction' || e.level === 'warning'),
+    );
     seen.current = ids;
     if (!fresh.length) return;
     setAlerts((a) =>
@@ -82,9 +90,7 @@ export function AlertCentre({ telemetry, settings }) {
           const [level, title] =
             e.type === 'explore' && e.level === 'success'
               ? ['success', 'Mapping finished']
-              : e.type === 'prediction' && e.level !== 'warning'
-                ? ['info', 'Predictive speed change']
-                : ALERTS[e.type];
+              : ALERTS[e.type];
           return { id: e.id, level, title, message: e.message, at: Date.now(), sim: e.sim_time };
         }),
         ...a,
@@ -127,7 +133,8 @@ export function AlertCentre({ telemetry, settings }) {
           </div>
         </div>
       )}
-      <div aria-live="polite">
+      {/* Transient alerts float over the page so they never shift the controls underneath. */}
+      <div className="alert-float" aria-live="polite">
         {visible.map((a) => {
           const Icon = ICON[a.level];
           return (

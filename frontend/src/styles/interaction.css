@@ -496,3 +496,24 @@ html.a11y-contrast .panel {
 [id='evaluation'] {
   scroll-margin-top: 72px;
 }
+
+/* Transient alerts: an overlay that never moves the layout. Clicks pass through to the
+   page except on the dismiss button. */
+.alert-float {
+  position: fixed;
+  top: 68px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(560px, calc(100vw - 32px));
+  z-index: 45;
+  display: grid;
+  gap: var(--space-2);
+  pointer-events: none;
+}
+.alert-float .alert-banner {
+  box-shadow: 0 6px 20px rgba(27, 29, 31, 0.18);
+  pointer-events: none;
+}
+.alert-float .alert-banner button {
+  pointer-events: auto;
+}
