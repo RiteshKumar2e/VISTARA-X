@@ -133,12 +133,14 @@ def create_app(cfg: Settings = default_settings, start_engine: bool = True) -> F
         role = keys.get(key) if key else None
         request.state.role = role or ("admin" if not keys else "viewer")
         mutating = request.method in ("POST", "DELETE")
+        denied = None
         if keys and mutating and request.url.path != "/navigation/estop":
             if role is None:
-                return _error(401, "auth_required", "This action needs an operator or admin access key (X-API-Key)")
-            if role != "admin" and request.url.path.startswith(ADMIN_ONLY):
-                return _error(403, "forbidden", "This action needs the admin key")
-        response = await call_next(request)
+                denied = _error(401, "auth_required", "This action needs an operator or admin access key (X-API-Key)")
+            elif role != "admin" and request.url.path.startswith(ADMIN_ONLY):
+                denied = _error(403, "forbidden", "This action needs the admin key")
+        # Denied attempts are audited too: they are what an audit trail is for.
+        response = denied or await call_next(request)
         if mutating:
             entry = {"time": time.strftime("%Y-%m-%dT%H:%M:%S"), "method": request.method, "path": request.url.path,
                      "role": request.state.role if keys else "open", "status": response.status_code,

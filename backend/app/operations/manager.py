@@ -74,7 +74,10 @@ class OperationsManager:
         self._last_pose = None
         self._leg_mission = None
         self._arrived_at = None
-        self._lock = threading.RLock()
+        # Share the engine's lock. A separate lock deadlocked: the sim thread holds the
+        # engine lock and calls tick() (engine -> ops), while API calls such as
+        # create_task() held the ops lock and called into the engine (ops -> engine).
+        self._lock = getattr(engine, "_lock", None) or threading.RLock()
         self.history = self._load_history()
         self._next = max((h.get("id", 0) for h in self.history), default=0) + 1
 
