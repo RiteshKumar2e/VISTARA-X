@@ -712,7 +712,8 @@ def test_judge_demo_and_recorded_evidence(page):
     steps = page.locator("#judge-demo .js-step")
     expect(steps).to_have_count(8)
     # Steps are ticked only from telemetry / the backend event log, in order.
-    expect(page.locator("#judge-demo .js-done")).to_have_count(5, timeout=120000)
+    # Several steps can be confirmed by the same telemetry frame, so wait for "at least".
+    page.wait_for_function("document.querySelectorAll('#judge-demo .js-done').length >= 5", timeout=120000)
     wait_backend(page, lambda t: t["mission"]["status"] in ("goal_reached", "stopped", "error"), timeout=180)
     expect(page.locator("#judge-demo .js-done")).to_have_count(8, timeout=20000)
     t = telemetry(page)
