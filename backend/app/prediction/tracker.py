@@ -20,6 +20,8 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from ..scene.classes import policy_for
+
 ACCEL_STD = 1.0  # m/s^2: how quickly an object's velocity may change
 MEAS_STD = 0.10  # m: centroid measurement noise (LiDAR noise + segment-shape error)
 CONFIRM_HITS = 3
@@ -170,12 +172,21 @@ class MultiTracker:
         self._predict_all(now)
 
     def label_from(self, camera_tracks: list[dict]) -> None:
-        """Attach a semantic class from camera tracks near each LiDAR track."""
+        """Attach a semantic class from camera tracks near each LiDAR track.
+
+        A moving track never takes a static class (barrier, shelf, ...): an unrecognised
+        moving object passing a wall would otherwise be explained as "barrier".
+        """
         for t in self.tracks:
+            moving = t.speed >= MOVING_SPEED
             best = None
             for c in camera_tracks:
+                if moving and not policy_for(c["label"]).dynamic:
+                    continue
                 d = math.hypot(c["x"] - t.x[0], c["y"] - t.x[1])
                 if d < 0.8 and (best is None or d < best[0]):
                     best = (d, c["label"])
             if best:
                 t.label = best[1]
+            elif moving and not policy_for(t.label).dynamic:
+                t.label = "obstacle"  # drop a static class picked up while it stood still

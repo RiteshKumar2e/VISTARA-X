@@ -49,6 +49,22 @@ def test_two_objects_keep_their_ids():
     assert len(tr.tracks) == 2 and ids[2] != ids[8]
 
 
+def test_moving_track_is_not_labelled_with_a_static_class():
+    tr = MultiTracker()
+    _feed(tr, [(2 + 0.08 * i, 5.0) for i in range(20)])  # 0.8 m/s
+    (t,) = tr.tracks
+    tr.label_from([{"x": t.x[0] + 0.3, "y": t.x[1], "label": "barrier"}])  # a wall beside it
+    assert t.label == "obstacle"
+    tr.label_from([{"x": t.x[0] + 0.3, "y": t.x[1], "label": "barrier"},
+                   {"x": t.x[0] + 0.5, "y": t.x[1], "label": "person"}])
+    assert t.label == "person"  # a dynamic class still applies, even if farther away
+
+    still = MultiTracker()
+    _feed(still, [(5.0, 5.0)] * 6)
+    still.label_from([{"x": 5.2, "y": 5.0, "label": "barrier"}])
+    assert still.tracks[0].label == "barrier"  # static objects keep their class
+
+
 def test_lidar_background_subtraction_and_centroid():
     wall = Obstacle("wall", "barrier", "rect", 10.0, 9.0, w=20.0, h=0.3)
     prior = PriorMap(20, 12, [wall])

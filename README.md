@@ -216,7 +216,7 @@ The robot handles a moving obstacle in four stages:
 2. **Track.** Every object gets its own constant-velocity Kalman filter, with state *(x, y, vx, vy)*, 1 m/s² process noise and 0.10 m measurement noise.
    - **Association:** greedy nearest-neighbour inside a gate that widens with the track's uncertainty.
    - **Lifecycle:** a track is *tentative* until seen 3 times. It is *coasting* (uncertain) after 0.25 s without a measurement, for example behind a wall, and *lost* after 1.5 s.
-   - **Class:** a nearby camera track supplies the class (for example *person*) when the camera sees the object.
+   - **Class:** a nearby camera track supplies the class (for example *person*) when the camera sees the object. A moving track never takes a static class such as *barrier*; an unrecognised moving object is reported as *obstacle*.
 3. **Predict.** Positions at 0.5, 1, 2 and 3 s ahead come from the filter state. The uncertainty σ(t) combines the filter covariance with a pedestrian-like random acceleration of 0.35 m/s², capped at 0.5 m. These predictions are drawn in the plan view and the 3D view.
 4. **Assess and decide.** The robot's own motion is rolled out along its route in 0.1 s steps for 3 s. A conflict occurs at time *t* when the robot and the object come closer than *robot radius + object radius + safety margin + σ(t)*.
    - **Risk** is set by fixed rules:
@@ -527,8 +527,7 @@ No code edits are needed. Start both applications (Windows: `backend\start.bat` 
 - Sign-language recognition is not implemented.
 - Robot motion is kinematic. PyBullet is used for collision checks and rendering, not for actuation.
 - Targets are selected by the operator; automatic target recognition is not implemented.
-- Moving obstacles are avoided at their current position; their motion is not predicted.
-- Apart from the SLAM pose error and Whisper processing times reported here, no accuracy, latency or success-rate benchmarks have been measured over many runs.
+- The only success-rate benchmark is the predictive-vs-reactive comparison in [Evaluation](#evaluation): 9 runs per mode in one scenario family, with fixed seeds. Other figures (SLAM pose error, Whisper times) are single measurements in simulation.
 - All sensors are simulated against the simulator's geometry; no physical sensor is connected.
 - The YOLO weights (`yolov8n.pt`, `yolov8s.pt`) are COCO-trained; COCO classes rarely appear in the rendered scene, so real models often report few or no detections. Inference runs on the CPU only.
 - Automated browser tests run headless with software WebGL and reduced motion; full-motion 3D was checked visually in screenshots.

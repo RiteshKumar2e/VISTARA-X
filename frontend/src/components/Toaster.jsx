@@ -7,6 +7,16 @@ const NOTIFY = new Set(['replanned', 'goal_reached', 'blocked', 'collision', 'sa
 const AUTO_DISMISS_MS = 8000;
 const MAX_TOASTS = 3;
 
+function toastTitle(e) {
+  if (e.type === 'goal_reached') return 'Goal reached';
+  if (e.type === 'replanned') return 'Route replanned';
+  // The backend logs a temporary wait for moving obstacles as a "blocked" warning;
+  // only the error-level event means the mission actually ended.
+  if (e.type === 'blocked') return e.level === 'warning' ? 'Waiting for a clear route' : 'Mission blocked';
+  if (e.type === 'collision') return 'Collision';
+  return 'Safety stop';
+}
+
 /**
  * Dismissible notifications for mission events. Driven only by real backend
  * events from telemetry; events present before the page loaded are not replayed.
@@ -56,7 +66,7 @@ export function Toaster({ telemetry }) {
             transition={{ duration: 0.18 }}
           >
             <p>
-              <strong>{t.type === 'goal_reached' ? 'Goal reached' : t.type === 'replanned' ? 'Route replanned' : t.type === 'blocked' ? 'Mission blocked' : t.type === 'collision' ? 'Collision' : 'Safety stop'}</strong>
+              <strong>{toastTitle(t)}</strong>
               <span>{t.message}</span>
             </p>
             <button type="button" className="icon-btn" onClick={() => dismiss(t.id)} aria-label="Dismiss notification">

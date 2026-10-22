@@ -55,11 +55,18 @@ class TelemetryHub:
             await asyncio.sleep(self.period)
             if not self._clients:
                 continue
-            snap = await asyncio.to_thread(self.engine.snapshot)
-            if snap["seq"] == last_seq:
+            # One bad snapshot must not end the broadcaster: clients would stay connected
+            # but frozen. Log it, skip this frame, and the client's stale detector reports
+            # the gap if the failure persists.
+            try:
+                snap = await asyncio.to_thread(self.engine.snapshot)
+                if snap["seq"] == last_seq:
+                    continue
+                message = json.dumps(snap, separators=(",", ":"))
+            except Exception:
+                log.exception("Telemetry snapshot failed; skipping frame")
                 continue
             last_seq = snap["seq"]
-            message = json.dumps(snap, separators=(",", ":"))
             for q in list(self._clients):
                 if q.full():
                     try:

@@ -57,3 +57,24 @@ def test_invalid_client_messages_get_errors(client):
             if {"error", "pong"} <= kinds:
                 break
         assert {"error", "pong"} <= kinds
+
+
+def test_broadcaster_survives_snapshot_failure(client):
+    """A single failing snapshot must not stop the stream for every client."""
+    engine = client.app.state.engine
+    real = engine.snapshot
+    calls = {"n": 0}
+
+    def flaky():
+        calls["n"] += 1
+        if calls["n"] == 2:  # the first broadcast after the initial frame
+            raise RuntimeError("simulated snapshot failure")
+        return real()
+
+    engine.snapshot = flaky
+    try:
+        with client.websocket_connect("/ws/telemetry") as ws:
+            seqs = [json.loads(ws.receive_text())["seq"] for _ in range(5)]
+        assert calls["n"] > 2 and seqs == sorted(seqs)
+    finally:
+        engine.snapshot = real
