@@ -570,3 +570,119 @@ html.a11y-contrast .panel {
 html.a11y-large .alert-float {
   width: min(460px, calc(100vw - 32px));
 }
+
+/* ---------- Delivery operations ---------- */
+.operations {
+  display: grid;
+  gap: var(--space-3);
+}
+.operations .sub {
+  margin: var(--space-2) 0 0;
+}
+.ops-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.battery {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.battery-bar {
+  display: inline-block;
+  width: 120px;
+  height: 14px;
+  border: 2px solid var(--color-border-strong);
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--color-surface-muted);
+}
+.battery-bar span {
+  display: block;
+  height: 100%;
+}
+.battery-ok span {
+  background: var(--color-success);
+}
+.battery-warn span {
+  background: var(--color-warning);
+}
+.battery-bad span {
+  background: var(--color-danger);
+}
+.ops-form {
+  display: grid;
+  gap: var(--space-2);
+}
+.ops-form input,
+.ops-form select,
+.task-card input {
+  min-height: 38px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  width: 100%;
+}
+.pin {
+  font-size: var(--text-lg);
+  letter-spacing: 0.2em;
+}
+.task-card {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border-strong);
+  border-left: 5px solid var(--color-accent);
+  border-radius: var(--radius-md);
+}
+.task-card p {
+  margin: 0;
+}
+.task-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  font-size: var(--text-xs);
+}
+.task-steps li {
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border-strong);
+  color: var(--color-text-muted);
+}
+.task-steps li.done {
+  background: var(--color-success-soft);
+  border-color: var(--color-success);
+  color: var(--color-success);
+}
+.task-steps li.current {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-on-accent);
+  font-weight: 700;
+}
+.ops-list {
+  margin: 0;
+  padding-left: var(--space-5);
+  display: grid;
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+}
+.ops-list li {
+  overflow-wrap: anywhere;
+}
+.ops-list .btn-sm {
+  margin-left: var(--space-2);
+}
+[id='operations'] {
+  scroll-margin-top: 72px;
+}

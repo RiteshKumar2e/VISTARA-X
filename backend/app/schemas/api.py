@@ -111,6 +111,29 @@ class MappingControlRequest(StrictModel):
     clear: bool = False
 
 
+class TaskCreateRequest(StrictModel):
+    pickup: str = Field(..., min_length=1, max_length=32, pattern=r"^[a-z_]+$")
+    dropoff: str = Field(..., min_length=1, max_length=32, pattern=r"^[a-z_]+$")
+    item: str = Field("package", max_length=60)
+    priority: Literal["urgent", "normal", "low"] = "normal"
+    requested_by: str = Field("operator", max_length=40)
+    recipient: str = Field("recipient", max_length=40)
+
+
+class DeliverRequest(StrictModel):
+    pin: str = Field(..., pattern=r"^[0-9]{4}$")
+
+
+class LoadedRequest(StrictModel):
+    by: str = Field("staff", max_length=40)
+
+
+class OpsConfigRequest(StrictModel):
+    auto_dispatch: Optional[bool] = None
+    auto_load: Optional[bool] = None
+    battery: Optional[float] = Field(None, ge=0, le=100, description="Demo control: set the charge level")
+
+
 class ErrorBody(BaseModel):
     code: str
     message: str

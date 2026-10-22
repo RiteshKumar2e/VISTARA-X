@@ -29,6 +29,7 @@ from scipy.ndimage import label as label_regions
 from ..perception.service import PerceptionService
 from ..prediction.risk import predicted_mask
 from ..prediction.system import PredictionSystem
+from ..operations.manager import OperationsManager
 from ..sensors.suite import SensorSuite
 from .physics import PYBULLET_AVAILABLE, PYBULLET_ERROR, AnalyticCollision, PyBulletCollision
 from .scenarios import DEFAULT_SCENARIO, MAP_H, MAP_W, SCENARIOS
@@ -54,6 +55,11 @@ PLANNER_MAPS = ("simulator", "slam", "imported")
 MIN_FRONTIER_CELLS = 6  # frontier clusters smaller than this (0.6 m) are ignored
 MAX_EXPLORE_GOALS = 30
 MAP_NAME = re.compile(r"^[A-Za-z0-9_-]{1,40}$")
+DOOR_SPEED = 0.9  # m/s a sliding door panel moves
+DOOR_TRIGGER_ROBOT = 2.0  # m: a door opens when the robot is this close
+DOOR_TRIGGER_PERSON = 1.6
+DOOR_CLOSE_AFTER = 2.5  # s with nobody near before a door closes
+ZONE_LOOKAHEAD = 1.0  # m of route ahead checked against speed zones
 PRED_SPEEDUP_HOLD = 0.6  # s a lower predictive speed is held before speeding up again
 PRED_REPLAN_AFTER = 2.5  # s of waiting before trying a route around the predicted path
 PRED_REPLAN_COOLDOWN = 3.0  # s between predictive replans
@@ -100,6 +106,7 @@ class SimulationEngine:
         self._event_id = 0
         self.seq = 0
         self.thread_alive = False
+        self.operations = OperationsManager(self, Path(settings.ops_dir), settings.webhook_url)
         self.reset(DEFAULT_SCENARIO, log_event=False)
         self._event("info", "system", "Simulation initialised")
 
@@ -202,7 +209,9 @@ class SimulationEngine:
     def _rebuild_grid(self) -> None:
         source = self._planner_source_map()
         if source is None:
-            self.grid.build(self.world.obstacles, self.inflation, MOVING_EXTRA_INFLATION)
+            # Doors are passable for planning: the robot opens them on approach. Physics,
+            # LiDAR and the safety veto still treat a closed door as solid.
+            self.grid.build([o for o in self.world.obstacles if o.label != "door"], self.inflation, MOVING_EXTRA_INFLATION)
         else:
             occ, unknown = resample(
                 source.states(), source.resolution, source.origin, self.grid.rows, self.grid.cols, self.grid.resolution
@@ -374,6 +383,8 @@ class SimulationEngine:
         reach = self.inflation + self.grid_resolution * 0.75
         best, best_d = None, float("inf")
         for o in self.world.obstacles:
+            if o.label == "door":
+                continue
             d = float(o.distance(px, py)) - (MOVING_EXTRA_INFLATION if o.moving else 0.0)
             if d < reach and d < best_d:
                 best, best_d = o, d
@@ -408,6 +419,7 @@ class SimulationEngine:
             if self.status == "paused":
                 return
             self.sim_time += self.dt
+            self._update_doors()
             if self.status in ACTIVE:
                 self.mission_time += self.dt
                 self._move_obstacles()
@@ -461,6 +473,7 @@ class SimulationEngine:
                 if self.status in ACTIVE:
                     self._halt("stopped", f"Collision with {what}; robot halted")
             self._in_collision = in_collision
+            self.operations.tick()
 
     def _step_planning(self) -> None:
         if self.exploring and self.target is None:
@@ -583,6 +596,13 @@ class SimulationEngine:
                 self._event(level, "proximity", msg, sources=prox["sources"])
             self._prox_action = prox["action"]
         speed_factor = min(speed_factor, prox["speed_factor"], pred_factor)
+        zone_speed, zone_name = self._zone_limit(r)
+        if zone_name != self.zone:
+            if zone_name:
+                self._event("info", "zone", f"Entering {zone_name}: speed limited to {zone_speed:.2f} m/s")
+            self.zone = zone_name
+        if zone_speed is not None and self.params["max_speed"] > 0:
+            speed_factor = min(speed_factor, zone_speed / self.params["max_speed"])
 
         self.controller.max_speed = self.params["max_speed"]
         if self._evade_target is not None:
@@ -674,6 +694,9 @@ class SimulationEngine:
             self._grid_source_version = None
             self._prox_action = "clear"
             self.prediction.reset(self.world)
+            self._init_doors()
+            self.zone = None
+            self.operations.reset()
             self._pred_factor = 1.0
             self._pred_hold_until = 0.0
             self._pred_action = "continue"
@@ -721,7 +744,7 @@ class SimulationEngine:
                 )
             return
         for obs in w.obstacles:
-            if obs.moving:
+            if obs.moving or obs.label == "door":
                 continue
             if float(obs.distance(x, y)) < m:
                 raise CommandError(
@@ -819,6 +842,10 @@ class SimulationEngine:
         because no mission happens to be running."""
         with self._lock:
             self.exploring = False
+            if self.operations.auto_dispatch:
+                # An emergency stop also stops the delivery queue until an operator restarts it.
+                self.operations.auto_dispatch = False
+                self._event("warning", "operations", "Delivery queue paused by the emergency stop")
             if self.status in ACTIVE or self.status == "paused":
                 self._halt("stopped", "Emergency stop")
                 self._event("warning", "mission", "Emergency stop: robot halted")
@@ -1098,6 +1125,62 @@ class SimulationEngine:
         with self._lock:
             label = "YOLOv8 inference" if mode == "yolov8" else "simulated (ground-truth) detector"
             self._event("info", "perception", f"Detector switched to {label}")
+
+    # ================================================================ doors and zones
+    def _init_doors(self) -> None:
+        self.doors = {}
+        for o in self.world.obstacles:
+            if o.label == "door":
+                # Slides along its long side into the wall next to the doorway.
+                along_x = o.w >= o.h
+                span = max(o.w, o.h)
+                opened = (o.x + span, o.y) if along_x else (o.x, o.y + span)
+                self.doors[o.id] = {"obs": o, "closed": (o.x, o.y), "open": opened, "last_need": -1e9, "state": "closed"}
+
+    def _update_doors(self) -> None:
+        if not self.doors:
+            return
+        r = self.world.robot
+        people = [o for o in self.world.obstacles if o.label == "person"]
+        for d in self.doors.values():
+            o = d["obs"]
+            cx, cy = d["closed"]
+            need = math.hypot(r.x - cx, r.y - cy) < DOOR_TRIGGER_ROBOT or any(
+                math.hypot(p.x - cx, p.y - cy) < DOOR_TRIGGER_PERSON for p in people
+            )
+            if need:
+                d["last_need"] = self.sim_time
+            want_open = need or self.sim_time - d["last_need"] < DOOR_CLOSE_AFTER
+            tx, ty = d["open"] if want_open else d["closed"]
+            dist = math.hypot(tx - o.x, ty - o.y)
+            if dist > 1e-6:
+                step = min(DOOR_SPEED * self.dt, dist)
+                o.x += (tx - o.x) / dist * step
+                o.y += (ty - o.y) / dist * step
+                self._grid_dirty = True
+                state = "opening" if want_open else "closing"
+            else:
+                state = "open" if want_open else "closed"
+            if state != d["state"] and state in ("open", "closed"):
+                self._event("info", "door", f"Door {o.id} {state}")
+            d["state"] = state
+
+    def _zone_limit(self, r) -> tuple[float | None, str | None]:
+        """Speed limit of any zone the robot is in or about to enter."""
+        zones = self.scenario.zones
+        if not zones:
+            return None, None
+        pts = [(r.x, r.y)]
+        if len(self.path) > 1:
+            wp = self.path[min(self.waypoint_index, len(self.path) - 1)]
+            dist = math.hypot(wp[0] - r.x, wp[1] - r.y) or 1.0
+            f = min(ZONE_LOOKAHEAD / dist, 1.0)
+            pts.append((r.x + (wp[0] - r.x) * f, r.y + (wp[1] - r.y) * f))
+        best = None
+        for z in zones:
+            if any(z.contains(x, y) for x, y in pts) and (best is None or z.max_speed < best.max_speed):
+                best = z
+        return (best.max_speed, best.name) if best else (None, None)
 
     # ================================================================ predictive avoidance
     def _predictive_step(self, r) -> tuple[float, bool]:
@@ -1517,6 +1600,9 @@ class SimulationEngine:
                 "sensors": {**self.sensors.snapshot(self.sim_time), "proximity_stops": self.proximity_stops},
                 "mapping": self.mapping_status(),
                 "prediction": self.prediction.snapshot(self.params["predictive"]),
+                "zone": self.zone,
+                "operations": self.operations.snapshot(),
+                "doors": [{"id": k, "state": d["state"]} for k, d in self.doors.items()],
             }
 
     def map_data(self) -> dict:

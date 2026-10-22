@@ -28,6 +28,13 @@ NAV_VERBS = ["go", "take", "move", "navigate", "drive", "head", "bring", "find",
 CAREFUL = ["safe", "safely", "safest", "carefully", "careful", "surakshit", "dhyan se", "dhyaan se", "savdhani",
            "सुरक्षित", "ध्यान से", "सावधानी"]
 SLOW = ["slow", "slowly", "dheere", "dhire", "dheeme", "धीरे", "धीमे"]
+DELIVERY_CUES = ["from", "deliver", "pick up", "pickup", "bring", "se", "से", "lao", "लाओ", "pahunchao", "पहुंचाओ", "पहुँचाओ"]
+URGENT = ["urgent", "urgently", "asap", "jaldi", "turant", "तुरंत", "जल्दी", "अर्जेंट"]
+ITEM_STOP = {
+    "from", "to", "the", "a", "an", "deliver", "take", "bring", "pick", "up", "pickup", "robot", "please", "and", "of",
+    "se", "tak", "ko", "le", "jao", "chalo", "lao", "pahunchao", "urgent", "urgently", "asap", "jaldi", "turant", "go",
+    "से", "तक", "को", "ले", "जाओ", "चलो", "लाओ", "पहुंचाओ", "पहुँचाओ", "तुरंत", "जल्दी", "रोबोट", "कृपया", "carry",
+}
 HINGLISH_MARKERS = {"ko", "tak", "jao", "chalo", "ruko", "roko", "karo", "wapas", "vapas", "phir", "fir", "aage",
                     "badho", "kahan", "kidhar", "thoda", "pahuncho", "dheere", "jaldi", "rakho", "chalu"}
 
@@ -62,13 +69,16 @@ def detect_language(text: str) -> str:
 
 @dataclass
 class ParsedCommand:
-    intent: str  # navigate | return_home | stop | pause | resume | unknown
+    intent: str  # navigate | deliver | return_home | stop | pause | resume | unknown
     language: str
     destination: dict | None = None  # {"key", "name", "name_hi", "x", "y"} or {"x", "y"} for coordinates
     constraints: dict = field(default_factory=dict)
     issue: str | None = None  # ambiguous | unknown_destination | no_destination | not_understood | empty
     candidates: list[str] = field(default_factory=list)
     matched: list[str] = field(default_factory=list)  # keywords that decided the intent (for transparency)
+    pickup: dict | None = None  # deliver: where the item is collected (destination = where it goes)
+    item: str | None = None
+    priority: str = "normal"
 
 
 def parse(text: str, places) -> ParsedCommand:
@@ -100,8 +110,13 @@ def parse(text: str, places) -> ParsedCommand:
     for p in places:
         for alias in sorted(p.aliases, key=len, reverse=True):
             a = alias.lower()
-            if (a in t) if DEVANAGARI.search(a) else re.search(rf"(?<![a-z]){re.escape(a)}(?![a-z])", t):
-                hits.setdefault(p.key, (p, alias))
+            if DEVANAGARI.search(a):
+                pos = t.find(a)
+            else:
+                m = re.search(rf"(?<![a-z]){re.escape(a)}(?![a-z])", t)
+                pos = m.start() if m else -1
+            if pos >= 0:
+                hits.setdefault(p.key, (p, alias, pos))
                 break
     returning = _has(t, RETURN)
     resume = _has(t, RESUME)
@@ -111,12 +126,31 @@ def parse(text: str, places) -> ParsedCommand:
         start = next((p for p in places if p.key == "start"), None)
         if start:
             return ParsedCommand("return_home", lang, _place(start), constraints, matched=returning)
+    cues = _has(t, DELIVERY_CUES)
+    if len(hits) == 2 and cues:
+        # "Pharmacy se Ward B tak dawai le jao" / "deliver medicine from the pharmacy to the ICU":
+        # the first place named is the pickup, the second the drop-off.
+        (a, a_alias, _), (b, b_alias, _) = sorted(hits.values(), key=lambda h: h[2])
+        rest = t
+        for alias in (a_alias, b_alias):
+            rest = rest.replace(alias.lower(), " ")
+        words = [w for w in rest.split() if w not in ITEM_STOP and w not in _function_words() and not w.isdigit()]
+        priority = "urgent" if _has(t, URGENT) else "normal"
+        item = " ".join(w for w in words if w not in URGENT)[:40] or None
+        explicit = [c for c in cues if c not in ("se", "से")]
+        if item is None and not explicit:
+            # "Reception se exit tak jao" names two places but nothing to carry: ask.
+            names = [h[0].name for h in hits.values()]
+            return ParsedCommand("navigate", lang, None, constraints, issue="ambiguous", candidates=names,
+                                 matched=[h[1] for h in hits.values()])
+        return ParsedCommand("deliver", lang, _place(b), constraints, matched=[a_alias, b_alias, *cues],
+                             pickup=_place(a), item=item, priority=priority)
     if len(hits) > 1:
         names = [h[0].name for h in hits.values()]
         return ParsedCommand("navigate", lang, None, constraints, issue="ambiguous", candidates=names,
                              matched=[h[1] for h in hits.values()])
     if len(hits) == 1:
-        p, alias = next(iter(hits.values()))
+        p, alias, _ = next(iter(hits.values()))
         return ParsedCommand("navigate", lang, _place(p), constraints, matched=[alias, *nav])
 
     coords = COORDS.search(t) if nav else None

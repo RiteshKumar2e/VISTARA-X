@@ -13,7 +13,7 @@ const LAYERS = [
   ['sensor', 'Camera overlay'],
   ['lidar', 'LiDAR scan'],
   ['predict', 'Predictions'],
-  ['places', 'Place names'],
+  ['places', 'Places and zones'],
   ['trail', 'Trail'],
   ['explored', 'Unobserved cells', 'plan'],
 ];
@@ -102,12 +102,17 @@ export function SimulationViewport({
 
   const scenario = telemetry?.scenario;
   const [places, setPlaces] = useState([]);
+  const [zones, setZones] = useState([]);
   useEffect(() => {
     if (!scenario || !online) return undefined;
     let cancelled = false;
     api
       .places()
-      .then((r) => !cancelled && setPlaces(r.places))
+      .then((r) => {
+        if (cancelled) return;
+        setPlaces(r.places);
+        setZones(r.zones || []);
+      })
       .catch(() => {});
     return () => {
       cancelled = true;
@@ -117,6 +122,7 @@ export function SimulationViewport({
   const viewProps = {
     telemetry,
     places,
+    zones,
     scenario,
     world,
     onPick,

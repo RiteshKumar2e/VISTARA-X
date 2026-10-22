@@ -19,6 +19,7 @@ VISTARA-X is a simulation-first **predictive** autonomous navigation system. It 
 - [Configuration](#configuration)
 - [Predictive navigation](#predictive-navigation)
 - [Evaluation](#evaluation)
+- [Delivery operations](#delivery-operations)
 - [Mapping and localisation](#mapping-and-localisation)
 - [Voice and text commands](#voice-and-text-commands)
 - [Accessibility](#accessibility)
@@ -58,6 +59,8 @@ The system runs entirely in simulation, with module boundaries designed for late
 | 3D digital twin | Three.js warehouse (racking, pallets, crates, barriers, person), differential-drive robot with wheels, casters and camera mast, LiDAR points, route ribbons, orbit/top/follow cameras; 2D plan view and automatic fallback | Implemented |
 | Dashboard | Mission overview with quick controls and health, simulator, controls, perception, sensors, navigation (occupancy grid, route validity, replanning history), telemetry, event log, system health, guided and blocked-route demos | Implemented |
 | Predictive navigation | LiDAR object extraction against a prior map, constant-velocity Kalman multi-object tracking with stable IDs, 0.5/1/2/3 s predictions with uncertainty, rule-based LOW/MEDIUM/HIGH conflict risk and time to conflict, sampling-based predictive speed choice (continue/slow/crawl/wait), stepping aside when an object heads for the robot, replanning around predicted paths, reactive-baseline switch | Implemented (simulated sensors) |
+| Delivery operations | Delivery tasks (pickup → load confirmation → drop-off → recipient PIN as proof), priority queue with automatic dispatch, battery with automatic return to the charging dock, automatic sliding doors, quiet/slow speed zones, notifications with an optional webhook, delivery log, report and CSV | Implemented (simulation; battery rates demo-accelerated) |
+| Access control | Optional operator/admin keys, viewer access without a key, admin-only settings, audit log; the emergency stop never needs a key | Implemented (off by default) |
 | Real-world scenarios | Hospital ward (corridor, wards, pharmacy, lab, ICU, nurse and visitor) and university campus (six buildings, trees, benches, fountain, students), each with named destinations in English and Hindi, a matching 3D look, place labels, and a card on how such robots are used in the real world | Implemented (simulation; intended uses, not validated deployments) |
 | Evaluation | `python -m app.evaluation`: 9 crossing variants × predictive/reactive, plus 7 scenario checks; results in `backend/evaluation/` and the dashboard | Implemented |
 | Mapping and localisation | Log-odds occupancy mapping from the simulated LiDAR; wheel-odometry prediction corrected by correlative scan matching (2D SLAM); autonomous frontier exploration; planning on the live SLAM map or an imported map | Implemented (simulated sensors); ROS 2 live SLAM not set up |
@@ -156,6 +159,11 @@ Interactive reference at `http://localhost:8000/docs` (development). All respons
 | `GET /speech/status`, `POST /speech/load`, `POST /speech/transcribe?language=en\|hi` | Whisper status, model warm-up, transcription of a raw audio body |
 | `POST /simulation/config {"predictive": true\|false}` | Predictive avoidance on, or off (reactive baseline) |
 | `GET /evaluation` | Results of the last `python -m app.evaluation` run |
+| `GET /operations`, `POST /operations/tasks` | Delivery queue, battery and notifications; request a delivery (returns the recipient PIN) |
+| `POST /operations/tasks/{id}/loaded` · `/deliver {"pin"}` · `/cancel` | Confirm loading, proof of delivery, cancel |
+| `POST /operations/dock` · `/operations/config` | Return to the charging dock; auto-dispatch, auto-load (demo), battery level (demo) |
+| `GET /operations/report`, `/operations/report.csv` | Operations report and delivery log export |
+| `GET /auth/status`, `GET /audit` | Whether access keys are required; audit log of changes (admin) |
 | Telemetry `prediction` | Tracks (ID, class, state, velocity, confidence, predicted positions with sigma), risk, time to conflict, action, reason, conflict points, metrics |
 | `POST /models/select`, `POST /sensors/configure`, `POST /perception/config` | Model policy, sensor settings, frame processing |
 | `WS /ws/telemetry` | Versioned state stream at 10 Hz with sequence numbers |
@@ -196,6 +204,9 @@ cp frontend/.env.example frontend/.env
 | `VISTARA_LOG_LEVEL` | `INFO` | Logging verbosity |
 | `VISTARA_MAPS_DIR` | `backend/maps` | Where saved maps (PGM + YAML) are stored |
 | `VISTARA_WHISPER_MODEL` | `base` | Whisper size: `tiny`, `base`, `small`, `medium` |
+| `VISTARA_OPS_DIR` | `backend/operations` | Delivery log (`deliveries.jsonl`) and audit log (`audit.jsonl`) |
+| `VISTARA_WEBHOOK_URL` | *(empty)* | If set, every operations notification is POSTed there as JSON (connect an SMS/WhatsApp/chat gateway). Nothing is sent when empty. |
+| `VISTARA_OPERATOR_KEY`, `VISTARA_ADMIN_KEY` | *(empty)* | Optional access keys (send as `X-API-Key`). When set, changes need a key; admin-only: resets, parameters, map import, operations settings. Keep them in `backend/.env`, never in `VITE_*`. |
 
 ## Predictive navigation
 
@@ -280,6 +291,30 @@ All 7 scenario checks passed:
 - unreachable destination
 
 The per-run table and details are in [results.md](backend/evaluation/results.md).
+
+## Delivery operations
+
+VISTARA-X runs delivery jobs, not only single destinations.
+
+- **Delivery task:** pickup → the robot waits until staff confirm the item is loaded → drop-off → the recipient enters the task's 4-digit PIN (proof of delivery, with time and duration).
+  - Requests come from the *Delivery operations* panel, `POST /operations/tasks`, or a voice/text command such as *"Pharmacy se Ward B tak dawai le jao"* or *"Deliver the blood sample from the lab to the ICU urgently"*.
+  - The PIN is shown once to the requester, to give to the recipient. Three wrong PINs alert the operator.
+- **Queue:** urgent → normal → low, then oldest first.
+  - The robot dispatches the next job by itself when idle (it can be paused).
+  - A failed pickup is retried once.
+  - A mission started by hand always takes precedence.
+  - The emergency stop also pauses the queue.
+- **Battery (simulated, demo-accelerated rates):** 0.4 %/m driven, 0.01 %/s idle, +2 %/s at the charging dock.
+  - Below 30% the robot returns to the dock after its job.
+  - Below 15% it gives up a pickup leg (re-queued), but finishes a drop-off it has started.
+  - It resumes work at 95%.
+- **Automatic doors (hospital):** sliding doors open for the robot (2 m) and for people (1.6 m), and close 2.5 s after everyone has passed. The planner treats doors as passable; LiDAR, physics and the safety veto see a closed door as solid, so the robot waits for it.
+- **Speed zones:** quiet wards (0.4 m/s), ICU (0.35 m/s), the campus plaza (0.5 m/s) and the warehouse loading dock (0.5 m/s), drawn on the maps.
+- **Notifications:** every step is notified in the app to the requester, staff or recipient. With `VISTARA_WEBHOOK_URL` set, it is also POSTed as JSON to that URL.
+- **Reports:** finished deliveries are appended to `deliveries.jsonl`. `GET /operations/report` gives counts, mean delivery time, distance, collisions and near misses; `.csv` exports the log.
+- **Access keys (optional):** with `VISTARA_OPERATOR_KEY` / `VISTARA_ADMIN_KEY` set, viewing stays open, changes need a key, and settings need the admin key. Every change is written to the audit log. The emergency stop is always allowed.
+
+Not built (they need hardware or a multi-robot engine): lifts and multi-floor maps, fleets of several robots, keep-right lane rules. [PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md) lists every real-world aspect, its status, and a preliminary hazard log.
 
 ## Mapping and localisation
 

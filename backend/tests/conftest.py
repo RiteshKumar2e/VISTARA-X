@@ -10,8 +10,9 @@ from app.simulation.engine import SimulationEngine  # noqa: E402
 
 
 @pytest.fixture
-def settings():
-    return Settings(detector_mode="simulated")
+def settings(tmp_path):
+    # Delivery logs go to a temporary folder, never into backend/operations.
+    return Settings(detector_mode="simulated", ops_dir=str(tmp_path / "ops"))
 
 
 @pytest.fixture

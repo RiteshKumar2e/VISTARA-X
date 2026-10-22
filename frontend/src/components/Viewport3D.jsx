@@ -10,7 +10,7 @@ const DRAG_THRESHOLD = 5;
  * re-render per frame. Calls onError if WebGL cannot be initialised.
  */
 const Viewport3D = forwardRef(function Viewport3D(
-  { telemetry, world, onPick, onHover, layers, effects, rejected, selectedObstacle, camera, onError, label, lite, places, scenario },
+  { telemetry, world, onPick, onHover, layers, effects, rejected, selectedObstacle, camera, onError, label, lite, places, zones, scenario },
   ref,
 ) {
   const hostRef = useRef(null);
@@ -120,7 +120,8 @@ const Viewport3D = forwardRef(function Viewport3D(
     const sim = simRef.current;
     if (!sim) return;
     sim.setPlaces(layers.places ? places : []);
-  }, [places, layers.places, world]);
+    sim.setZones(layers.places ? zones : []);
+  }, [places, zones, layers.places, world]);
 
   // Click (not drag) selects; orbit/pan drags are handled by OrbitControls.
   const onPointerDown = (e) => {

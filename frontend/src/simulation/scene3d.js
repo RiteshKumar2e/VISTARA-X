@@ -190,6 +190,7 @@ function makeMaterials() {
     stone: std('#b9b4aa', 0.9),
     pot: std('#a8603d', 0.8),
     scrubs: std('#4f97b0', 0.8),
+    doorGlass: new THREE.MeshStandardMaterial({ color: '#9fc6d8', roughness: 0.1, metalness: 0.2, transparent: true, opacity: 0.45 }),
     shirts: [std('#b0413e', 0.85), std('#3e6fb0', 0.85), std('#e0a83a', 0.85), std('#6a4fb0', 0.85)],
   };
 }
@@ -444,8 +445,26 @@ function buildPlanter(o, M) {
   return g;
 }
 
+function buildDoor(o, M) {
+  // Automatic sliding door: glass panel in a slim frame.
+  const g = new THREE.Group();
+  const along = o.w >= o.h;
+  const L = Math.max(o.w, o.h);
+  const T = Math.min(o.w, o.h);
+  const H = o.height;
+  const inner = new THREE.Group();
+  inner.add(box(L, H, T * 0.5, M.doorGlass, 0, H / 2, 0));
+  for (const x of [-L / 2 + 0.03, L / 2 - 0.03]) inner.add(box(0.06, H, T, M.steel, x, H / 2, 0));
+  inner.add(box(L, 0.06, T, M.steel, 0, H - 0.03, 0));
+  inner.add(box(L, 0.05, T, M.steel, 0, 0.025, 0));
+  if (!along) inner.rotation.y = Math.PI / 2;
+  g.add(inner);
+  return g;
+}
+
 function buildObstacle(o, M) {
   const builders = {
+    door: buildDoor,
     shelf: buildShelf,
     pallet: buildPallet,
     barrier: buildBarrier,
@@ -1182,6 +1201,32 @@ export class Sim3D {
       this.backdrop.add(b);
     }
     this.scene.add(this.backdrop);
+  }
+
+  /** Speed zones (quiet wards, pedestrian plaza, loading dock) as tinted floor areas with a label. */
+  setZones(zones) {
+    if (!this.zoneGroup) {
+      this.zoneGroup = new THREE.Group();
+      this.overlayGroup.add(this.zoneGroup);
+    }
+    for (const c of [...this.zoneGroup.children]) {
+      this.zoneGroup.remove(c);
+      disposeTree(c);
+    }
+    for (const z of zones || []) {
+      const w = z.x1 - z.x0;
+      const h = z.y1 - z.y0;
+      const tint = new THREE.Mesh(
+        new THREE.PlaneGeometry(w, h),
+        new THREE.MeshBasicMaterial({ color: z.kind === 'quiet' ? '#7b6cff' : '#f0b429', transparent: true, opacity: 0.12, depthWrite: false }),
+      );
+      tint.rotation.x = -Math.PI / 2;
+      tint.position.set(z.x0 + w / 2, 0.012, -(z.y0 + h / 2));
+      const label = textSprite(`${z.name} · ${z.max_speed} m/s`, { color: '#ffffff', bg: 'rgba(60,52,140,0.8)', height: 0.26 });
+      label.position.set(z.x0 + w / 2, 0.5, -(z.y0 + h / 2));
+      this.zoneGroup.add(tint, label);
+    }
+    this.dirty = true;
   }
 
   /** Name labels for the scenario's destinations, so spoken place names can be found on the map. */

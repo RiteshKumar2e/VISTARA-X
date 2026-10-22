@@ -37,3 +37,6 @@ backend/maps/*
 !backend/maps/warehouse_demo.pgm
 !backend/maps/warehouse_demo.yaml
 !backend/maps/README.md
+
+# Delivery logs
+backend/operations/

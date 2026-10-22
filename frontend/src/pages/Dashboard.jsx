@@ -5,6 +5,7 @@ import { ChallengePanel } from '../components/ChallengePanel';
 import { CommandConsole } from '../components/CommandConsole';
 import { EvaluationPanel } from '../components/EvaluationPanel';
 import { MappingPanel } from '../components/MappingPanel';
+import { OperationsPanel } from '../components/OperationsPanel';
 import { PredictionPanel } from '../components/PredictionPanel';
 import { EventLog } from '../components/EventLog';
 import { GuidedDemo } from '../components/GuidedDemo';
@@ -253,6 +254,7 @@ export default function Dashboard() {
             selectedObstacle={selectedObstacle}
             lite={lite}
           />
+          <OperationsPanel telemetry={telemetry} online={online} command={command} />
           <PredictionPanel telemetry={telemetry} online={online} command={command} />
           <MappingPanel telemetry={telemetry} online={online} command={command} />
           <div className="split">

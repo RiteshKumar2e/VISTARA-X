@@ -15,6 +15,29 @@ const client = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
+// Optional access key (only needed when the backend has VISTARA_OPERATOR_KEY / VISTARA_ADMIN_KEY set).
+// Kept in this browser only; never put a key in VITE_* variables.
+export function getAccessKey() {
+  try {
+    return window.localStorage.getItem('vistara.apiKey') || '';
+  } catch {
+    return '';
+  }
+}
+export function setAccessKey(key) {
+  try {
+    if (key) window.localStorage.setItem('vistara.apiKey', key);
+    else window.localStorage.removeItem('vistara.apiKey');
+  } catch {
+    /* not remembered */
+  }
+}
+client.interceptors.request.use((cfg) => {
+  const key = getAccessKey();
+  if (key) cfg.headers['X-API-Key'] = key;
+  return cfg;
+});
+
 /** Normalised error with a user-facing message and optional field details. */
 export class ApiError extends Error {
   constructor(message, { code = 'error', status = 0, details = null } = {}) {
@@ -87,6 +110,18 @@ export const api = {
   importMap: (name, yaml, pgmBase64) => request('post', '/mapping/import', { name, yaml, pgm_base64: pgmBase64 }),
   exportUrl: (file) => `${API_BASE_URL}/mapping/export?file=${file}`,
   evaluation: () => request('get', '/evaluation'),
+  // Delivery operations
+  operations: () => request('get', '/operations'),
+  createTask: (body) => request('post', '/operations/tasks', body),
+  taskLoaded: (id, by) => request('post', `/operations/tasks/${id}/loaded`, { by }),
+  taskDeliver: (id, pin) => request('post', `/operations/tasks/${id}/deliver`, { pin }),
+  taskCancel: (id) => request('post', `/operations/tasks/${id}/cancel`),
+  opsDock: () => request('post', '/operations/dock'),
+  opsConfig: (body) => request('post', '/operations/config', body),
+  opsReport: () => request('get', '/operations/report'),
+  reportCsvUrl: () => `${API_BASE_URL}/operations/report.csv`,
+  authStatus: () => request('get', '/auth/status'),
+  audit: () => request('get', '/audit'),
   // Places, commands and speech
   places: () => request('get', '/places'),
   interpret: (text, source = 'text', { trusted = false, speech = null } = {}) =>

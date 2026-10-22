@@ -109,6 +109,9 @@ def _hospital() -> World:
     obstacles = [
         *_wall_with_doors("wall-n", 7.6, (4.0, 10.0, 16.0)),
         *_wall_with_doors("wall-s", 4.4, (4.0, 10.0, 16.0)),
+        # Automatic sliding doors in every doorway (they open for the robot and for people).
+        *[_rect(f"door-{side}{i + 1}", "door", x, y, 1.6, 0.08, height=2.1)
+          for side, y in (("n", 7.6), ("s", 4.4)) for i, x in enumerate((4.0, 10.0, 16.0))],
         _rect("div-n1", "wall", 7.0, 9.85, 0.2, 4.3, height=2.4),
         _rect("div-n2", "wall", 13.0, 9.85, 0.2, 4.3, height=2.4),
         _rect("div-s1", "wall", 7.0, 2.15, 0.2, 4.3, height=2.4),
@@ -180,6 +183,30 @@ START_ALIASES = ("start", "starting point", "start point", "home", "base", "shur
 
 
 @dataclass(frozen=True)
+class Zone:
+    """A speed-limited area (quiet ward, pedestrian plaza, loading dock)."""
+
+    key: str
+    name: str
+    x0: float
+    y0: float
+    x1: float
+    y1: float
+    max_speed: float  # m/s
+    kind: str = "quiet"
+
+    def contains(self, x: float, y: float) -> bool:
+        return self.x0 <= x <= self.x1 and self.y0 <= y <= self.y1
+
+    def to_dict(self) -> dict:
+        return {"key": self.key, "name": self.name, "x0": self.x0, "y0": self.y0, "x1": self.x1, "y1": self.y1,
+                "max_speed": self.max_speed, "kind": self.kind}
+
+
+DOCK_ALIASES = ("charging dock", "charging", "charger", "dock", "चार्जिंग", "चार्जर", "डॉक")
+
+
+@dataclass(frozen=True)
 class Scenario:
     key: str
     name: str
@@ -187,6 +214,7 @@ class Scenario:
     default_target: tuple[float, float]
     build: Callable[[], World]
     places: tuple[Place, ...] = field(default_factory=tuple)
+    zones: tuple[Zone, ...] = field(default_factory=tuple)
 
     def to_dict(self) -> dict:
         return {
@@ -195,6 +223,7 @@ class Scenario:
             "description": self.description,
             "default_target": {"x": self.default_target[0], "y": self.default_target[1]},
             "places": [p.to_dict() for p in self.places],
+            "zones": [z.to_dict() for z in self.zones],
         }
 
 
@@ -221,6 +250,7 @@ SCENARIOS: dict[str, Scenario] = {
                 Place("exit", "Exit", "निकास", 18.5, 6.0,
                       ("exit", "way out", "bahar", "nikas", "nikaas", "निकास", "बाहर", "एग्जिट", "एक्जिट")),
             ),
+            (Zone("dock", "Loading dock: slow", 16.0, 9.0, 20.0, 12.0, 0.5, "slow"),),
         ),
         Scenario(
             "crossing",
@@ -234,6 +264,7 @@ SCENARIOS: dict[str, Scenario] = {
                       ("exit", "way out", "bahar", "nikas", "nikaas", "निकास", "बाहर", "एग्जिट", "एक्जिट")),
                 Place("midpoint", "Corridor midpoint", "गलियारे का बीच", 12.0, 6.0,
                       ("midpoint", "middle", "corridor", "beech", "गलियारा", "बीच")),
+                Place("charging", "Charging dock", "चार्जिंग डॉक", 1.2, 4.0, DOCK_ALIASES),
             ),
         ),
         Scenario(
@@ -254,6 +285,11 @@ SCENARIOS: dict[str, Scenario] = {
                 Place("icu", "ICU", "आईसीयू", 16.0, 2.9, ("icu", "intensive care", "आईसीयू")),
                 Place("exit", "Exit", "निकास", 19.0, 6.0,
                       ("exit", "way out", "bahar", "nikas", "nikaas", "निकास", "बाहर", "एग्जिट")),
+                Place("charging", "Charging dock", "चार्जिंग डॉक", 1.0, 3.3, DOCK_ALIASES),
+            ),
+            (
+                Zone("wards", "Quiet zone: wards", 7.1, 7.7, 20.0, 12.0, 0.4),
+                Zone("icu", "Quiet zone: ICU", 13.1, 0.0, 20.0, 4.3, 0.35),
             ),
         ),
         Scenario(
@@ -270,7 +306,9 @@ SCENARIOS: dict[str, Scenario] = {
                 Place("canteen", "Canteen", "कैंटीन", 3.0, 4.7, ("canteen", "cafeteria", "mess", "कैंटीन", "कैफेटेरिया")),
                 Place("lab_block", "Lab block", "प्रयोगशाला भवन", 10.5, 3.6, ("lab block", "labs", "lab", "प्रयोगशाला", "लैब")),
                 Place("auditorium", "Auditorium", "सभागार", 17.0, 4.6, ("auditorium", "hall", "सभागार", "ऑडिटोरियम")),
+                Place("charging", "Charging dock", "चार्जिंग डॉक", 1.2, 4.4, DOCK_ALIASES),
             ),
+            (Zone("plaza", "Pedestrian plaza", 7.5, 4.0, 12.5, 8.0, 0.5, "pedestrian"),),
         ),
         Scenario(
             "slalom",

@@ -13,6 +13,7 @@ import time
 from collections import deque
 
 from ..simulation.engine import ACTIVE, CommandError
+from ..operations.manager import OpsError
 from .parser import ParsedCommand, parse
 
 CAREFUL = {"safety_margin": 0.30, "max_speed": 0.6}
@@ -107,6 +108,21 @@ MSG = {
     },
 }
 
+MSG.update({
+    "deliver_confirm": {
+        "en": "Deliver {item} from {pickup} to {dropoff} ({priority})? Press Confirm to add it to the delivery queue.",
+        "hi": "{item} को {pickup} से {dropoff} तक पहुँचाना है ({priority})? कतार में जोड़ने के लिए Confirm दबाएँ।",
+        "hi-Latn": "{item} ko {pickup} se {dropoff} tak pahunchana hai ({priority})? Queue mein jodne ke liye Confirm dabao.",
+    },
+    "deliver_queued": {
+        "en": "Delivery #{id} queued: {item} from {pickup} to {dropoff}. Recipient PIN: {pin}.",
+        "hi": "डिलीवरी #{id} कतार में: {item}, {pickup} से {dropoff}। लेने वाले का PIN: {pin}।",
+        "hi-Latn": "Delivery #{id} queue mein: {item}, {pickup} se {dropoff}. Recipient PIN: {pin}.",
+    },
+})
+PRIORITY_WORD = {"urgent": {"en": "urgent", "hi": "अर्जेंट", "hi-Latn": "urgent"},
+                 "normal": {"en": "normal priority", "hi": "सामान्य", "hi-Latn": "normal"}}
+
 NOTE = {
     "careful": {
         "en": " Careful mode: 0.30 m safety margin, max 0.6 m/s.",
@@ -184,6 +200,9 @@ class CommandService:
                 "destination": cmd.destination,
                 "constraints": cmd.constraints,
                 "keywords": cmd.matched,
+                "pickup": cmd.pickup,
+                "item": cmd.item,
+                "priority": cmd.priority,
             },
             "status": "pending",
             "validation": None,
@@ -221,6 +240,9 @@ class CommandService:
             if cmd.issue in ("not_understood", "empty"):
                 return self._respond(rec, cmd.issue, "rejected")
 
+            if cmd.intent == "deliver":
+                return self._prepare_delivery(rec, trusted)
+
             # navigate / return_home with a destination: validate before anything moves.
             dest = cmd.destination
             name = self._place_name(dest, lang)
@@ -257,9 +279,49 @@ class CommandService:
             raise CommandError("not_pending", f"Command #{cid} is {rec['status']}, not awaiting confirmation")
         return rec
 
+    # ------------------------------------------------------------ deliveries
+    def _delivery_words(self, rec: dict) -> dict:
+        lang = rec["language"]
+        it = rec["intent"]
+        item = it["item"] or {"en": "the item", "hi": "सामान", "hi-Latn": "saaman"}.get(lang, "the item")
+        return {
+            "item": item,
+            "pickup": self._place_name(it["pickup"], lang),
+            "dropoff": self._place_name(it["destination"], lang),
+            "priority": PRIORITY_WORD[it["priority"]].get(lang, it["priority"]),
+        }
+
+    def _prepare_delivery(self, rec: dict, trusted: bool) -> dict:
+        it = rec["intent"]
+        for place in (it["pickup"], it["destination"]):
+            check = self.engine.preview_route(place["x"], place["y"])
+            if not check["valid"]:
+                rec["validation"] = check
+                return self._respond(rec, "invalid_target", "rejected", place=self._place_name(place, rec["language"]),
+                                     reason=check["message"])
+        rec["validation"] = {"valid": True, "reachable": True, "length": None, "code": "ok",
+                             "message": "Both places are valid", "planner_map": self.engine.params["planner_map"]}
+        if trusted:
+            return self._create_delivery(rec)
+        return self._respond(rec, "deliver_confirm", "awaiting_confirmation", **self._delivery_words(rec))
+
+    def _create_delivery(self, rec: dict) -> dict:
+        it = rec["intent"]
+        try:
+            task = self.engine.operations.create_task(
+                it["pickup"]["key"], it["destination"]["key"], it["item"] or "package", it["priority"],
+                requested_by=f"{rec['source']} command", recipient="recipient",
+            )
+        except OpsError as exc:
+            return self._respond(rec, "failed", "failed", reason=exc.message)
+        rec["delivery"] = {"task": task["id"], "pin": task["pin"]}
+        return self._respond(rec, "deliver_queued", "executed", id=task["id"], pin=task["pin"], **self._delivery_words(rec))
+
     def confirm(self, cid: int) -> dict:
         with self._lock:
             rec = self._find(cid)
+            if rec["intent"]["type"] == "deliver":
+                return self._create_delivery(rec)
             dest = rec["intent"]["destination"]
             # Re-validate: the world may have changed since the command was parsed.
             check = self.engine.preview_route(dest["x"], dest["y"])

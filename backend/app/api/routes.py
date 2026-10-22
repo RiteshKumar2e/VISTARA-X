@@ -11,6 +11,10 @@ from fastapi import APIRouter, Query, Request, Response
 from ..schemas.api import (
     Ack,
     CommandRequest,
+    DeliverRequest,
+    LoadedRequest,
+    OpsConfigRequest,
+    TaskCreateRequest,
     ConfigRequest,
     MapImportRequest,
     MapNameRequest,
@@ -369,7 +373,8 @@ def import_map(body: MapImportRequest, request: Request):
 def places(request: Request):
     """Named destinations of the current scenario (with their Hindi names and aliases)."""
     eng = engine(request)
-    return {"scenario": eng.scenario.key, "places": [p.to_dict() for p in eng.scenario.places]}
+    return {"scenario": eng.scenario.key, "places": [p.to_dict() for p in eng.scenario.places],
+            "zones": [z.to_dict() for z in eng.scenario.zones]}
 
 
 @router.post("/commands/interpret", tags=["commands"], responses=ERRORS)
@@ -433,3 +438,74 @@ def evaluation_results():
     if not path.is_file():
         raise CommandError("not_generated", "No evaluation results yet. Run: python -m app.evaluation (from backend/)", 404)
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+# ================================================================ delivery operations
+def _ops(request: Request):
+    return engine(request).operations
+
+
+@router.get("/operations", tags=["operations"])
+def operations(request: Request):
+    """Delivery queue, active task, battery and notifications."""
+    return _ops(request).snapshot()
+
+
+@router.post("/operations/tasks", tags=["operations"], status_code=201, responses=ERRORS)
+def create_task(body: TaskCreateRequest, request: Request):
+    """Queue a delivery. The response contains the recipient PIN (shown once to the requester)."""
+    return {"ok": True, "task": _ops(request).create_task(body.pickup, body.dropoff, body.item, body.priority,
+                                                         body.requested_by, body.recipient)}
+
+
+@router.post("/operations/tasks/{task_id}/loaded", tags=["operations"], responses=ERRORS)
+def task_loaded(task_id: int, request: Request, body: LoadedRequest | None = None):
+    return {"ok": True, "task": _ops(request).confirm_loaded(task_id, body.by if body else "staff")}
+
+
+@router.post("/operations/tasks/{task_id}/deliver", tags=["operations"], responses=ERRORS)
+def task_deliver(task_id: int, body: DeliverRequest, request: Request):
+    """Proof of delivery: the recipient enters the task PIN at the robot."""
+    return {"ok": True, "task": _ops(request).deliver(task_id, body.pin)}
+
+
+@router.post("/operations/tasks/{task_id}/cancel", tags=["operations"], responses=ERRORS)
+def task_cancel(task_id: int, request: Request):
+    return {"ok": True, "task": _ops(request).cancel(task_id)}
+
+
+@router.post("/operations/dock", tags=["operations"], responses=ERRORS)
+def go_dock(request: Request):
+    return {"ok": True, "operations": _ops(request).return_to_dock()}
+
+
+@router.post("/operations/config", tags=["operations"], responses=ERRORS)
+def ops_config(body: OpsConfigRequest, request: Request):
+    return {"ok": True, "operations": _ops(request).configure(body.auto_dispatch, body.auto_load, body.battery)}
+
+
+@router.get("/operations/report", tags=["operations"])
+def ops_report(request: Request):
+    """Deliveries, failures, times, distance, collisions and near misses (this session + the log file)."""
+    return _ops(request).report()
+
+
+@router.get("/operations/report.csv", tags=["operations"])
+def ops_report_csv(request: Request):
+    return Response(_ops(request).report_csv(), media_type="text/csv",
+                    headers={"Content-Disposition": 'attachment; filename="vistara-deliveries.csv"'})
+
+
+# ================================================================ access control
+@router.get("/auth/status", tags=["system"])
+def auth_status(request: Request):
+    """Whether access keys are required, and the role of the key sent (if any)."""
+    return {"enabled": request.app.state.auth_enabled, "role": getattr(request.state, "role", "viewer")}
+
+
+@router.get("/audit", tags=["system"], responses=ERRORS)
+def audit(request: Request):
+    """Recent changes made through the API (method, path, role, result). Admin only when keys are enabled."""
+    if request.app.state.auth_enabled and getattr(request.state, "role", "viewer") != "admin":
+        raise CommandError("forbidden", "The audit log needs the admin key", 403)
+    return {"entries": list(request.app.state.audit)[::-1]}

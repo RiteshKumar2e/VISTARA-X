@@ -373,7 +373,7 @@ function drawPredictions(ctx, view, pred, narrow) {
 }
 
 export function drawScene(ctx, view, world, state, opts) {
-  const { pal, layers, explored, now, anim, effects, rejected, selectedObstacle, places } = opts;
+  const { pal, layers, explored, now, anim, effects, rejected, selectedObstacle, places, zones } = opts;
   const { X, Y, scale, m, narrow, cssWidth, cssHeight } = view;
   ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
   ctx.fillStyle = pal.bg;
@@ -641,6 +641,25 @@ export function drawScene(ctx, view, world, state, opts) {
         ctx.fillStyle = range - 0.3 < 0.9 ? '#ff9f5a' : '#7fe3d9';
         ctx.fillRect(X(rp.x + range * Math.cos(a)) - 1.5, Y(rp.y + range * Math.sin(a)) - 1.5, 3, 3);
       }
+    }
+    if (layers.places && zones?.length) {
+      ctx.save();
+      for (const z of zones) {
+        ctx.fillStyle = z.kind === 'quiet' ? 'rgba(123,108,255,0.14)' : 'rgba(240,180,41,0.14)';
+        ctx.fillRect(X(z.x0), Y(z.y1), (z.x1 - z.x0) * scale, (z.y1 - z.y0) * scale);
+        ctx.strokeStyle = z.kind === 'quiet' ? 'rgba(123,108,255,0.6)' : 'rgba(240,180,41,0.7)';
+        ctx.setLineDash([6, 4]);
+        ctx.strokeRect(X(z.x0), Y(z.y1), (z.x1 - z.x0) * scale, (z.y1 - z.y0) * scale);
+        ctx.setLineDash([]);
+        if (!narrow) {
+          ctx.fillStyle = '#c9c2ff';
+          ctx.font = '11px -apple-system, "Segoe UI", sans-serif';
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'top';
+          ctx.fillText(`${z.name} (${z.max_speed} m/s)`, X(z.x0) + 4, Y(z.y1) + 4);
+        }
+      }
+      ctx.restore();
     }
     if (layers.places && places?.length) {
       ctx.save();

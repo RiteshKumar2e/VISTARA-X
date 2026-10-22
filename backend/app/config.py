@@ -69,10 +69,18 @@ class Settings:
     pybullet_gui: bool = field(default_factory=lambda: os.getenv("VISTARA_PYBULLET_GUI", "0") == "1")
     log_level: str = field(default_factory=lambda: os.getenv("VISTARA_LOG_LEVEL", "INFO").upper())
     # Saved occupancy maps (ROS map_server PGM + YAML pairs).
-    maps_dir: str = field(default_factory=lambda: os.getenv("VISTARA_MAPS_DIR", str(BACKEND_DIR / "maps")))
+    maps_dir: str = field(default_factory=lambda: os.getenv("VISTARA_MAPS_DIR") or str(BACKEND_DIR / "maps"))
     # Speech recognition (faster-whisper). tiny | base | small | medium. "base" answers in
     # ~3-6 s on a 4-core laptop CPU; "small" is more accurate for Hindi but ~4x slower.
-    whisper_model: str = field(default_factory=lambda: os.getenv("VISTARA_WHISPER_MODEL", "base"))
+    whisper_model: str = field(default_factory=lambda: os.getenv("VISTARA_WHISPER_MODEL") or "base")
+    # Delivery log (JSON lines) and optional webhook that receives every notification
+    # (connect it to an SMS, WhatsApp or chat gateway). Empty = no external messages.
+    ops_dir: str = field(default_factory=lambda: os.getenv("VISTARA_OPS_DIR") or str(BACKEND_DIR / "operations"))
+    webhook_url: str = field(default_factory=lambda: os.getenv("VISTARA_WEBHOOK_URL", ""))
+    # Optional access keys. When set, changing anything requires X-API-Key: operator or
+    # admin key; viewing never does. Admin-only: resets, parameters, map import, operations settings.
+    operator_key: str = field(default_factory=lambda: os.getenv("VISTARA_OPERATOR_KEY", ""))
+    admin_key: str = field(default_factory=lambda: os.getenv("VISTARA_ADMIN_KEY", ""))
 
     def __post_init__(self) -> None:
         if not 0.05 <= self.grid_resolution <= 1.0:
