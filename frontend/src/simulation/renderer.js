@@ -373,7 +373,7 @@ function drawPredictions(ctx, view, pred, narrow) {
 }
 
 export function drawScene(ctx, view, world, state, opts) {
-  const { pal, layers, explored, now, anim, effects, rejected, selectedObstacle } = opts;
+  const { pal, layers, explored, now, anim, effects, rejected, selectedObstacle, places } = opts;
   const { X, Y, scale, m, narrow, cssWidth, cssHeight } = view;
   ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
   ctx.fillStyle = pal.bg;
@@ -641,6 +641,27 @@ export function drawScene(ctx, view, world, state, opts) {
         ctx.fillStyle = range - 0.3 < 0.9 ? '#ff9f5a' : '#7fe3d9';
         ctx.fillRect(X(rp.x + range * Math.cos(a)) - 1.5, Y(rp.y + range * Math.sin(a)) - 1.5, 3, 3);
       }
+    }
+    if (layers.places && places?.length) {
+      ctx.save();
+      ctx.font = `600 ${narrow ? 10 : 12}px -apple-system, "Segoe UI", sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'bottom';
+      for (const p of places) {
+        const px = X(p.x);
+        const py = Y(p.y);
+        ctx.strokeStyle = '#2fb8ab';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(px, py, 5, 0, Math.PI * 2);
+        ctx.stroke();
+        const w = ctx.measureText(p.name).width + 10;
+        ctx.fillStyle = 'rgba(15,110,106,0.88)';
+        ctx.fillRect(px - w / 2, py - 24, w, 17);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(p.name, px, py - 9);
+      }
+      ctx.restore();
     }
     if (layers.predict && t.prediction) drawPredictions(ctx, view, t.prediction, narrow);
     const prox = t.sensors?.proximity?.action;

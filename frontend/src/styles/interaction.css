@@ -502,9 +502,8 @@ html.a11y-contrast .panel {
 .alert-float {
   position: fixed;
   top: 68px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: min(560px, calc(100vw - 32px));
+  right: 16px;
+  width: min(380px, calc(100vw - 32px));
   z-index: 45;
   display: grid;
   gap: var(--space-2);
@@ -516,4 +515,58 @@ html.a11y-contrast .panel {
 }
 .alert-float .alert-banner button {
   pointer-events: auto;
+}
+
+/* ---------- Scenario real-world card ---------- */
+.scenario-info {
+  margin-top: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-accent);
+  border-left-width: 4px;
+  border-radius: var(--radius-md);
+  background: var(--color-accent-soft);
+}
+.scenario-info p {
+  margin: 0 0 var(--space-1);
+}
+.scenario-info-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-accent-strong);
+}
+.scenario-benefits {
+  list-style: none;
+  margin: var(--space-1) 0 var(--space-2);
+  padding: 0;
+  display: grid;
+  gap: 3px;
+  font-size: var(--text-sm);
+}
+.scenario-benefits li {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+}
+.scenario-benefits .icon {
+  color: var(--color-success);
+  flex: none;
+  margin-top: 3px;
+}
+
+/* Compact floating alerts: readable, but they cover as little of the view as possible. */
+.alert-float .alert-banner {
+  padding: var(--space-2) var(--space-3);
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+}
+.alert-float .alert-banner strong {
+  font-size: var(--text-base);
+}
+.alert-float .alert-banner > .icon {
+  width: 18px;
+  height: 18px;
+}
+html.a11y-large .alert-float {
+  width: min(460px, calc(100vw - 32px));
 }

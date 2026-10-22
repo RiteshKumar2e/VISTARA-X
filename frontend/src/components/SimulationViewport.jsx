@@ -1,6 +1,8 @@
 import { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { CrosshairIcon, ObstacleIcon, SpinnerIcon, DisconnectedIcon } from './Icons';
 import { PlanView2D } from './PlanView2D';
+import { api } from '../services/api';
+import { ScenarioInfo } from './ScenarioInfo';
 import { MissionStatusBadge } from './StatusBadge';
 
 const Viewport3D = lazy(() => import('./Viewport3D'));
@@ -11,6 +13,7 @@ const LAYERS = [
   ['sensor', 'Camera overlay'],
   ['lidar', 'LiDAR scan'],
   ['predict', 'Predictions'],
+  ['places', 'Place names'],
   ['trail', 'Trail'],
   ['explored', 'Unobserved cells', 'plan'],
 ];
@@ -76,7 +79,7 @@ export function SimulationViewport({
   const [webglFailed, setWebglFailed] = useState(false);
   const [hover, setHover] = useState(null);
   const [effects, setEffects] = useState(() => !prefersReducedMotion());
-  const [layers, setLayers] = useState({ route: true, inflation: true, sensor: true, lidar: true, predict: true, trail: true, explored: false });
+  const [layers, setLayers] = useState({ route: true, inflation: true, sensor: true, lidar: true, predict: true, places: true, trail: true, explored: false });
   const activeView = webglFailed ? 'plan' : view;
 
   useEffect(() => store('vistara.view', view), [view]);
@@ -97,8 +100,24 @@ export function SimulationViewport({
     if (telemetry && (pick.point || pick.obstacleId)) onMapClick(pick);
   };
 
+  const scenario = telemetry?.scenario;
+  const [places, setPlaces] = useState([]);
+  useEffect(() => {
+    if (!scenario || !online) return undefined;
+    let cancelled = false;
+    api
+      .places()
+      .then((r) => !cancelled && setPlaces(r.places))
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [scenario, online]);
+
   const viewProps = {
     telemetry,
+    places,
+    scenario,
     world,
     onPick,
     onHover: setHover,
@@ -302,6 +321,7 @@ export function SimulationViewport({
           <li><span className="sw sw-track" aria-hidden="true">&times;</span>Camera-derived track</li>
         </ul>
       </div>
+      <ScenarioInfo scenario={scenario} />
     </section>
   );
 }

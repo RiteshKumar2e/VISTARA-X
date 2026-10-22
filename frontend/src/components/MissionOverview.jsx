@@ -54,7 +54,11 @@ export function MissionOverview({ telemetry, backend, connection, command, onlin
               {m.progress !== null ? ` · ${Math.round(m.progress * 100)}% of route` : ''} &middot; replans {m.replans}
             </span>
           )}
-          {m?.reason && <span className="small ov-reason">{m.reason}</span>}
+          {m?.reason && (
+            <span className="small ov-reason" title={m.reason}>
+              {m.reason}
+            </span>
+          )}
         </div>
         <div className="button-row ov-actions">
           <CommandButton

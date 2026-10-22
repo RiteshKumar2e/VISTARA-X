@@ -57,7 +57,8 @@ The system runs entirely in simulation, with module boundaries designed for late
 | Telemetry | Versioned WebSocket stream with sequence numbers and bounded queues | Implemented |
 | 3D digital twin | Three.js warehouse (racking, pallets, crates, barriers, person), differential-drive robot with wheels, casters and camera mast, LiDAR points, route ribbons, orbit/top/follow cameras; 2D plan view and automatic fallback | Implemented |
 | Dashboard | Mission overview with quick controls and health, simulator, controls, perception, sensors, navigation (occupancy grid, route validity, replanning history), telemetry, event log, system health, guided and blocked-route demos | Implemented |
-| Predictive navigation | LiDAR object extraction against a prior map, constant-velocity Kalman multi-object tracking with stable IDs, 0.5/1/2/3 s predictions with uncertainty, rule-based LOW/MEDIUM/HIGH conflict risk and time to conflict, sampling-based predictive speed choice (continue/slow/crawl/wait), replanning around predicted paths, reactive-baseline switch | Implemented (simulated sensors) |
+| Predictive navigation | LiDAR object extraction against a prior map, constant-velocity Kalman multi-object tracking with stable IDs, 0.5/1/2/3 s predictions with uncertainty, rule-based LOW/MEDIUM/HIGH conflict risk and time to conflict, sampling-based predictive speed choice (continue/slow/crawl/wait), stepping aside when an object heads for the robot, replanning around predicted paths, reactive-baseline switch | Implemented (simulated sensors) |
+| Real-world scenarios | Hospital ward (corridor, wards, pharmacy, lab, ICU, nurse and visitor) and university campus (six buildings, trees, benches, fountain, students), each with named destinations in English and Hindi, a matching 3D look, place labels, and a card on how such robots are used in the real world | Implemented (simulation; intended uses, not validated deployments) |
 | Evaluation | `python -m app.evaluation`: 9 crossing variants × predictive/reactive, plus 7 scenario checks; results in `backend/evaluation/` and the dashboard | Implemented |
 | Mapping and localisation | Log-odds occupancy mapping from the simulated LiDAR; wheel-odometry prediction corrected by correlative scan matching (2D SLAM); autonomous frontier exploration; planning on the live SLAM map or an imported map | Implemented (simulated sensors); ROS 2 live SLAM not set up |
 | Map files | Save, load, export and import maps in ROS map_server format (PGM + YAML) | Implemented |
@@ -213,7 +214,8 @@ The robot handles a moving obstacle in four stages:
      - **LOW:** neither.
    - **Time to conflict** is shown only for confirmed, moving tracks with confidence ≥ 0.3.
    - **Decision:** the speeds 100%, 50%, 25% and 0% are each rolled out, and the fastest one with no predicted conflict is chosen. A lower speed is held for at least 0.6 s.
-   - **Replanning:** if even waiting conflicts (the object is heading for the robot), or the robot has waited 2.5 s, A\* replans with the cells the object is predicted to sweep in the next 2.5 s blocked. The new route is accepted only if it is validated and no longer than 1.8× the old one.
+   - **Stepping aside:** if even waiting conflicts (the object is heading for the robot's position, for example a person who does not give way in a corridor), the robot evaluates points 0.7, 1.1 and 1.5 m away in 16 directions. It keeps only points it can reach in a straight line on the planning grid, and drives to the one whose rollout keeps the largest predicted margin. When the conflict has passed, it replans from there.
+   - **Replanning:** if no such point exists, or the robot has waited 2.5 s, A\* replans with the cells the object is predicted to sweep in the next 2.5 s blocked. The new route is accepted only if it is validated and no longer than 1.8× the old one.
    - **Reason text:** each decision is written out, for example *Predicted path conflict with track 3 (person) in 1.8 s: slowing to 50%*.
 
 **What this is not:**
@@ -222,6 +224,16 @@ The robot handles a moving obstacle in four stages:
 - The decision step is a sampling-based speed planner, not model-predictive control.
 - Constant-velocity prediction is least accurate when an object turns.
 - The predictive layer sits on top of the reactive safety layers (route-obstruction check, LiDAR/ultrasonic proximity stop, ground-truth veto), which stay active. Collision safety never depends on YOLO, speech recognition or a language model.
+
+### Real-world scenarios
+
+Each scenario has named destinations (English, Hindi and Hinglish aliases) that voice and text commands resolve to, place labels in the 3D and plan views, its own 3D look, and a *Real-world use* card. The card describes where such robots are used and what the scenario demonstrates; these are intended uses, not claims of deployment.
+
+| Scenario | Layout | Places |
+|---|---|---|
+| `hospital` (Hospital ward) | 3 m corridor with rooms and door openings; beds, reception and pharmacy counters, lab bench, ICU bed, a trolley; a nurse who gives way and a visitor who does not | Corridor entrance, Reception, Ward A, Ward B, Pharmacy, Lab, ICU, Exit |
+| `campus` (University campus) | Outdoor plaza between six buildings, trees, benches and a fountain; students walking, one crossing without giving way; distant city blocks as scenery only | Main gate, Library, Admin block, Hostel, Canteen, Lab block, Auditorium |
+| `warehouse`, `crossing`, `slalom`, `enclosed` | Logistics aisle, predictive crossing corridor, test track, unreachable bay | See `GET /places` |
 
 **Scenario** `crossing` (Predictive crossing):
 

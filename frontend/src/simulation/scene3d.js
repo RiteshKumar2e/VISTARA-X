@@ -113,6 +113,30 @@ function textSprite(text, { color = '#f2f1ee', bg = 'rgba(14,17,19,0.78)', heigh
   return sprite;
 }
 
+/** Building facade: rows of windows on a light render, repeated per storey and bay. */
+function facadeTexture() {
+  const c = document.createElement('canvas');
+  c.width = 128;
+  c.height = 128;
+  const g = c.getContext('2d');
+  g.fillStyle = '#d9d4ca';
+  g.fillRect(0, 0, 128, 128);
+  g.fillStyle = '#c9c3b7';
+  g.fillRect(0, 118, 128, 10); // floor slab line
+  const glass = g.createLinearGradient(0, 0, 0, 80);
+  glass.addColorStop(0, '#5f7f99');
+  glass.addColorStop(1, '#2f4558');
+  g.fillStyle = glass;
+  g.fillRect(18, 30, 92, 62);
+  g.fillStyle = '#e9e6df';
+  g.fillRect(62, 30, 4, 62); // mullion
+  g.fillRect(18, 58, 92, 3);
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
 function disposeTree(obj) {
   obj.traverse((o) => {
     o.geometry?.dispose();
@@ -152,6 +176,21 @@ function makeMaterials() {
     hub: std('#9aa3aa', 0.4, 0.6),
     lens: new THREE.MeshStandardMaterial({ color: '#0d1b24', roughness: 0.15, metalness: 0.4 }),
     accent: std('#0f6e6a', 0.5, 0.2),
+    roof: std('#5d6166', 0.9),
+    glassDoor: new THREE.MeshStandardMaterial({ color: '#3d5a70', roughness: 0.15, metalness: 0.5 }),
+    trunk: std('#6b4a2f', 0.9),
+    leaves: [std('#4f7d3a', 0.85), std('#5d8f43', 0.85), std('#42702f', 0.85)],
+    plaster: std('#eef0f0', 0.85),
+    skirting: std('#8fa3ad', 0.6),
+    mattress: std('#e8eef2', 0.7),
+    blanket: std('#7fa6c9', 0.85),
+    steel: std('#b9c0c5', 0.35, 0.7),
+    desk: std('#c9a77a', 0.6),
+    water: new THREE.MeshStandardMaterial({ color: '#5aa6c8', roughness: 0.1, metalness: 0.2, transparent: true, opacity: 0.85 }),
+    stone: std('#b9b4aa', 0.9),
+    pot: std('#a8603d', 0.8),
+    scrubs: std('#4f97b0', 0.8),
+    shirts: [std('#b0413e', 0.85), std('#3e6fb0', 0.85), std('#e0a83a', 0.85), std('#6a4fb0', 0.85)],
   };
 }
 
@@ -266,7 +305,14 @@ function buildPerson(o, M) {
     const leg = add(new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.055, H * 0.47, 12), M.clothes), H * 0.235);
     leg.position.z = z;
   }
-  add(new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.14, H * 0.32, 16), M.vest), H * 0.63);
+  // Clothing by role: nurse scrubs, varied student/visitor clothes, hi-vis vest otherwise.
+  const id = o.id || '';
+  const torsoMat = id.startsWith('nurse')
+    ? M.scrubs
+    : id.startsWith('student') || id.startsWith('visitor')
+      ? M.shirts[Math.floor(seeded(id)() * M.shirts.length)]
+      : M.vest;
+  add(new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.14, H * 0.32, 16), torsoMat), H * 0.63);
   for (const z of [-0.21, 0.21]) {
     const arm = add(new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.04, H * 0.3, 10), M.clothes), H * 0.62);
     arm.position.z = z;
@@ -276,8 +322,146 @@ function buildPerson(o, M) {
   return g;
 }
 
+function buildBuilding(o, M) {
+  // Facade texture repeats per 3 m bay and 3 m storey, so windows keep a real-world size.
+  const g = new THREE.Group();
+  const H = o.height;
+  const mk = (len) => {
+    const t = facadeTexture();
+    t.repeat.set(Math.max(1, Math.round(len / 3)), Math.max(1, Math.round(H / 3)));
+    return new THREE.MeshStandardMaterial({ map: t, roughness: 0.85 });
+  };
+  const mats = [mk(o.h), mk(o.h), M.roof, M.roof, mk(o.w), mk(o.w)];
+  const body = new THREE.Mesh(new THREE.BoxGeometry(o.w, H, o.h), mats);
+  body.position.y = H / 2;
+  body.castShadow = body.receiveShadow = true;
+  g.add(body);
+  g.add(box(o.w + 0.15, 0.25, o.h + 0.15, M.roof, 0, H + 0.12, 0)); // parapet
+  g.add(box(o.w + 0.1, 0.15, o.h + 0.1, M.dark, 0, 0.075, 0)); // plinth
+  // Glass entrance on the side facing the plaza centre (y = 6 m in the simulation).
+  const z = o.y > 6 ? o.h / 2 + 0.02 : -o.h / 2 - 0.02;
+  g.add(box(1.2, 2.1, 0.06, M.glassDoor, 0, 1.05, z));
+  return g;
+}
+
+function buildTree(o, M) {
+  const g = new THREE.Group();
+  const rnd = seeded(o.id);
+  const H = o.height;
+  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.14, H * 0.45, 10), M.trunk);
+  trunk.position.y = H * 0.225;
+  trunk.castShadow = true;
+  g.add(trunk);
+  for (let i = 0; i < 4; i += 1) {
+    const r = 0.45 + rnd() * 0.35;
+    const leaf = new THREE.Mesh(new THREE.IcosahedronGeometry(r, 1), M.leaves[i % M.leaves.length]);
+    leaf.position.set((rnd() - 0.5) * 0.6, H * 0.55 + rnd() * H * 0.3, (rnd() - 0.5) * 0.6);
+    leaf.castShadow = true;
+    g.add(leaf);
+  }
+  return g;
+}
+
+function buildBench(o, M) {
+  const g = new THREE.Group();
+  const along = o.w >= o.h;
+  const L = Math.max(o.w, o.h);
+  const D = Math.min(o.w, o.h);
+  const inner = new THREE.Group();
+  inner.add(box(L, 0.05, D, M.wood, 0, 0.45, 0));
+  inner.add(box(L, 0.35, 0.05, M.wood, 0, 0.68, -D / 2));
+  for (const x of [-L / 2 + 0.1, L / 2 - 0.1]) inner.add(box(0.06, 0.45, D, M.dark, x, 0.225, 0));
+  if (!along) inner.rotation.y = Math.PI / 2;
+  g.add(inner);
+  return g;
+}
+
+function buildWall(o, M) {
+  const g = new THREE.Group();
+  g.add(box(o.w, o.height, o.h, M.plaster, 0, o.height / 2, 0));
+  g.add(box(o.w + 0.02, 0.12, o.h + 0.02, M.skirting, 0, 0.06, 0));
+  return g;
+}
+
+function buildBed(o, M) {
+  const g = new THREE.Group();
+  const along = o.w >= o.h;
+  const L = Math.max(o.w, o.h);
+  const D = Math.min(o.w, o.h);
+  const inner = new THREE.Group();
+  inner.add(box(L, 0.08, D, M.steel, 0, 0.42, 0));
+  for (const x of [-L / 2 + 0.06, L / 2 - 0.06]) for (const z of [-D / 2 + 0.06, D / 2 - 0.06]) inner.add(box(0.05, 0.42, 0.05, M.steel, x, 0.21, z));
+  inner.add(box(L - 0.1, 0.16, D - 0.08, M.mattress, 0, 0.54, 0));
+  inner.add(box(L * 0.6, 0.06, D - 0.04, M.blanket, L * 0.15, 0.64, 0));
+  inner.add(box(0.06, 0.55, D, M.steel, -L / 2, 0.7, 0)); // headboard
+  if (!along) inner.rotation.y = Math.PI / 2;
+  g.add(inner);
+  return g;
+}
+
+function buildCounter(o, M) {
+  const g = new THREE.Group();
+  const H = o.height;
+  g.add(box(o.w, H - 0.05, o.h, M.plaster, 0, (H - 0.05) / 2, 0));
+  g.add(box(o.w + 0.06, 0.05, o.h + 0.08, M.desk, 0, H - 0.025, 0));
+  g.add(box(o.w + 0.01, 0.1, o.h + 0.01, M.skirting, 0, 0.05, 0));
+  return g;
+}
+
+function buildTrolley(o, M) {
+  const g = new THREE.Group();
+  const H = o.height;
+  for (const y of [0.25, H * 0.55, H - 0.05]) g.add(box(o.w, 0.03, o.h, M.steel, 0, y, 0));
+  for (const x of [-o.w / 2 + 0.03, o.w / 2 - 0.03]) for (const z of [-o.h / 2 + 0.03, o.h / 2 - 0.03]) g.add(box(0.03, H, 0.03, M.steel, x, H / 2, z));
+  g.add(box(o.w * 0.5, 0.12, o.h * 0.6, M.carton[0], -o.w * 0.15, H * 0.55 + 0.08, 0));
+  return g;
+}
+
+function buildFountain(o, M) {
+  const g = new THREE.Group();
+  const basin = new THREE.Mesh(new THREE.CylinderGeometry(o.r, o.r * 1.05, 0.45, 32), M.stone);
+  basin.position.y = 0.225;
+  basin.castShadow = basin.receiveShadow = true;
+  const water = new THREE.Mesh(new THREE.CylinderGeometry(o.r * 0.88, o.r * 0.88, 0.04, 32), M.water);
+  water.position.y = 0.42;
+  const column = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.12, o.height, 12), M.stone);
+  column.position.y = o.height / 2;
+  const bowl = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.12, 0.14, 20), M.stone);
+  bowl.position.y = o.height;
+  g.add(basin, water, column, bowl);
+  return g;
+}
+
+function buildPlanter(o, M) {
+  const g = new THREE.Group();
+  const pot = new THREE.Mesh(new THREE.CylinderGeometry(o.r, o.r * 0.8, 0.45, 16), M.pot);
+  pot.position.y = 0.225;
+  pot.castShadow = true;
+  const plant = new THREE.Mesh(new THREE.IcosahedronGeometry(o.r * 1.4, 1), M.leaves[1]);
+  plant.position.y = 0.45 + o.r * 1.1;
+  plant.castShadow = true;
+  g.add(pot, plant);
+  return g;
+}
+
 function buildObstacle(o, M) {
-  const builders = { shelf: buildShelf, pallet: buildPallet, barrier: buildBarrier, cone: buildCone, person: buildPerson };
+  const builders = {
+    shelf: buildShelf,
+    pallet: buildPallet,
+    barrier: buildBarrier,
+    cone: buildCone,
+    person: buildPerson,
+    building: buildBuilding,
+    tree: buildTree,
+    bench: buildBench,
+    wall: buildWall,
+    bed: buildBed,
+    counter: buildCounter,
+    trolley: buildTrolley,
+    cart: buildTrolley,
+    fountain: buildFountain,
+    planter: buildPlanter,
+  };
   const group = (builders[o.label] || buildCrate)(o, M);
   group.userData.obstacleId = o.id;
   group.traverse((c) => (c.userData.obstacleId = o.id));
@@ -524,12 +708,17 @@ export class Sim3D {
     floor.position.set(W / 2, 0, -H / 2);
     floor.receiveShadow = true;
     this.scene.add(floor);
+    this.floor = floor;
+    this.floorTex = tex;
 
     // Apron around the map so the walls sit on something.
     const apron = new THREE.Mesh(new THREE.PlaneGeometry(W + 8, H + 8), new THREE.MeshStandardMaterial({ color: '#2a2f33', roughness: 1 }));
     apron.rotation.x = -Math.PI / 2;
     apron.position.set(W / 2, -0.005, -H / 2);
     this.scene.add(apron);
+    this.apron = apron;
+    this.perimeter = new THREE.Group();
+    this.scene.add(this.perimeter);
 
     // Perimeter walls with a rubber kick-strip; painted pedestrian line just inside.
     const t = 0.15;
@@ -541,8 +730,8 @@ export class Sim3D {
       [t, H, W + t / 2, H / 2],
     ];
     for (const [w, d, x, y] of walls) {
-      this.scene.add(box(w, wh, d, this.M.wall, x, wh / 2, -y));
-      this.scene.add(box(w + 0.01, 0.08, d + 0.01, this.M.bumper, x, 0.04, -y));
+      this.perimeter.add(box(w, wh, d, this.M.wall, x, wh / 2, -y));
+      this.perimeter.add(box(w + 0.01, 0.08, d + 0.01, this.M.bumper, x, 0.04, -y));
     }
     const line = 0.05;
     const inset = 0.25;
@@ -946,6 +1135,75 @@ export class Sim3D {
     geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
     this.lidarPoints.geometry = geo;
+    this.dirty = true;
+  }
+
+  /** Scenario look: floor, surroundings, perimeter and sky. Visual only. */
+  setTheme(key) {
+    if (key === this.theme) return;
+    this.theme = key;
+    const themes = {
+      warehouse: { bg: '#1b2023', floor: '#ffffff', map: true, apron: '#2a2f33', walls: true, fog: null },
+      crossing: { bg: '#1b2023', floor: '#ffffff', map: true, apron: '#2a2f33', walls: true, fog: null },
+      slalom: { bg: '#1b2023', floor: '#ffffff', map: true, apron: '#2a2f33', walls: true, fog: null },
+      enclosed: { bg: '#1b2023', floor: '#ffffff', map: true, apron: '#2a2f33', walls: true, fog: null },
+      hospital: { bg: '#20272c', floor: '#dfe6ea', map: false, apron: '#3a4148', walls: true, fog: null },
+      campus: { bg: '#9fc3dd', floor: '#9a9a93', map: true, apron: '#5f8a4a', walls: false, fog: ['#b9d3e6', 35, 90] },
+    };
+    const t = themes[key] || themes.warehouse;
+    this.scene.background = new THREE.Color(t.bg);
+    this.scene.fog = t.fog ? new THREE.Fog(t.fog[0], t.fog[1], t.fog[2]) : null;
+    this.floor.material.map = t.map ? this.floorTex : null;
+    this.floor.material.color.set(t.floor);
+    this.floor.material.needsUpdate = true;
+    this.apron.material.color.set(t.apron);
+    this.perimeter.visible = t.walls;
+    if (key === 'campus' && !this.backdrop) this._buildBackdrop();
+    if (this.backdrop) this.backdrop.visible = key === 'campus';
+    this.dirty = true;
+  }
+
+  /** Distant city blocks around the campus plaza: scenery outside the simulated area,
+      never part of the simulation, the map or the sensors. */
+  _buildBackdrop() {
+    const { width: W, height: H } = this.world;
+    const rnd = seeded('backdrop');
+    this.backdrop = new THREE.Group();
+    const ring = [];
+    for (let x = -6; x <= W + 6; x += 4.5) ring.push([x, -7], [x, H + 7]);
+    for (let y = -2; y <= H + 2; y += 4.5) ring.push([-7, y], [W + 7, y]);
+    for (const [x, y] of ring) {
+      const w = 3 + rnd() * 2;
+      const d = 3 + rnd() * 2;
+      const h = 6 + rnd() * 14;
+      const b = buildBuilding({ id: `bg-${x}-${y}`, w, h: d, height: h, y: H / 2 + (y < H / 2 ? -1 : 1) }, this.M);
+      b.position.set(x, 0, -y);
+      b.traverse((m) => (m.castShadow = false));
+      this.backdrop.add(b);
+    }
+    this.scene.add(this.backdrop);
+  }
+
+  /** Name labels for the scenario's destinations, so spoken place names can be found on the map. */
+  setPlaces(places) {
+    if (!this.placeGroup) {
+      this.placeGroup = new THREE.Group();
+      this.overlayGroup.add(this.placeGroup);
+    }
+    for (const c of [...this.placeGroup.children]) {
+      this.placeGroup.remove(c);
+      disposeTree(c);
+    }
+    for (const p of places || []) {
+      const sprite = textSprite(p.name, { color: '#ffffff', bg: 'rgba(15,110,106,0.88)', height: 0.34 });
+      sprite.position.set(p.x, 2.6, -p.y);
+      const pin = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 2.4, 6), new THREE.MeshBasicMaterial({ color: '#0f6e6a' }));
+      pin.position.set(p.x, 1.2, -p.y);
+      const dot = new THREE.Mesh(new THREE.RingGeometry(0.16, 0.24, 24), new THREE.MeshBasicMaterial({ color: '#2fb8ab', side: THREE.DoubleSide }));
+      dot.rotation.x = -Math.PI / 2;
+      dot.position.set(p.x, 0.02, -p.y);
+      this.placeGroup.add(sprite, pin, dot);
+    }
     this.dirty = true;
   }
 

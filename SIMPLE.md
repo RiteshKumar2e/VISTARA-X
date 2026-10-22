@@ -36,6 +36,14 @@
 
 Predictive thoda dheema hai, lekin kabhi nahi takraaya. Ye nateeja ek simulated scenario ka hai; asli duniya ki safety ki guarantee nahi.
 
+### Real-world scenarios (naya)
+
+- 🏥 **Hospital ward:** corridor, wards (bed ke saath), reception, pharmacy, lab, ICU. Ek nurse chalti hai, aur ek visitor bina ruke raasta kaat-ta hai. Command do "Robot ko pharmacy tak le jao".
+- 🏫 **University campus:** library, admin, hostel, canteen, lab block aur auditorium, ped, bench, fountain aur chalte students. Command do "Take the robot to the hostel".
+- Har jagah ka naam 3D aur map dono mein likha dikhta hai.
+- Har scenario ke saath ek **"Real-world use"** card hai: aise robot asli duniya mein kahan use hote hain, aur ye scenario kya fayda dikhata hai. Ye sirf intended use hai, kisi asli hospital/campus mein test nahi hua.
+- Koi insaan seedha robot ki taraf aaye toh robot **side hat jaata hai** (evade), phir raasta dobara banata hai.
+
 ## 3. Safety (3 alag checks)
 
 1. Har pal agle 4 metre ke raaste ki jaanch.
@@ -107,7 +115,7 @@ Overview (problem, solution, real-world uses), Live mission, Architecture, Techn
 
 ## 12. Tests
 
-- **Backend:** 148 tests pass (prediction, risk, tracking, replanning, commands aur mapping samet).
+- **Backend:** 155 tests pass (prediction, risk, tracking, replanning, commands, mapping aur naye scenarios samet).
 - **Browser (Playwright):** 33 tests. Inme fake microphone se Whisper tak ka voice test aur predictive demo bhi hai.
 - **Evaluation:** `python -m app.evaluation` (predictive vs reactive, 9+9 runs, 7 scenario checks sab pass).
 

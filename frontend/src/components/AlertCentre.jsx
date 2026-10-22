@@ -109,7 +109,7 @@ export function AlertCentre({ telemetry, settings }) {
   }, []);
 
   const ttl = settings.duration * 1000;
-  const visible = alerts.filter((a) => !a.dismissed && (ttl === 0 || now - a.at < ttl)).slice(0, 3);
+  const visible = alerts.filter((a) => !a.dismissed && (ttl === 0 || now - a.at < ttl)).slice(0, 2);
   const dismiss = (id) => setAlerts((a) => a.map((x) => (x.id === id ? { ...x, dismissed: true } : x)));
   const status = telemetry?.mission?.status;
   const standing =

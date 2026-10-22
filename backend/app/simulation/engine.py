@@ -90,6 +90,7 @@ class SimulationEngine:
         }
         self.prediction = PredictionSystem()
         self._extra_block = None  # temporary predicted-path cells used for one replan
+        self._evade_target = None  # point the robot steps aside to when an object heads for it
         self.slam = SlamSession(MAP_W, MAP_H, SLAM_RESOLUTION)
         self.imported_map: dict | None = None  # {"map": LogOddsMap, "name", "source", "meta"}
         self.maps_dir = Path(settings.maps_dir)
@@ -541,7 +542,8 @@ class SimulationEngine:
             )
             return
 
-        blocker = self._path_obstruction()
+        # While stepping aside the robot is off its route, so the route check does not apply.
+        blocker = self._path_obstruction() if self._evade_target is None else None
         if blocker is not None and self.sim_time - self.last_replan_time >= REPLAN_COOLDOWN:
             if isinstance(blocker, Obstacle):
                 name = blocker.id
@@ -583,11 +585,21 @@ class SimulationEngine:
         speed_factor = min(speed_factor, prox["speed_factor"], pred_factor)
 
         self.controller.max_speed = self.params["max_speed"]
-        cmd = self.controller.compute(
-            r, self.path, max(self.waypoint_index - 1, 0), self.dt,
-            self.params["max_speed"] * max(speed_factor, 0.05),
-        )
-        self.waypoint_index = max(self.waypoint_index, cmd.segment_index)
+        if self._evade_target is not None:
+            # Step aside: drive straight to the evade point, then hold there.
+            ex, ey = self._evade_target
+            if math.hypot(ex - r.x, ey - r.y) > 0.1:
+                cmd = self.controller.compute(r, [(r.x, r.y), (ex, ey)], 0, self.dt,
+                                              min(self.params["max_speed"], 0.5) * max(prox["speed_factor"], 0.05))
+            else:
+                cmd = self.controller.compute(r, [(r.x, r.y), (ex, ey)], 0, self.dt, 0.0)
+                cmd.v = 0.0
+        else:
+            cmd = self.controller.compute(
+                r, self.path, max(self.waypoint_index - 1, 0), self.dt,
+                self.params["max_speed"] * max(speed_factor, 0.05),
+            )
+            self.waypoint_index = max(self.waypoint_index, cmd.segment_index)
         v, w = cmd.v, cmd.w
         if waiting:
             v = 0.0  # predictive wait/stop: hold position until the conflict clears
@@ -668,6 +680,7 @@ class SimulationEngine:
             self._pred_wait_since = None
             self._pred_last_replan = -1e9
             self._extra_block = None
+            self._evade_target = None
             self.replan_history: deque = deque(maxlen=20)
             self._replan = None
             self.proximity_stops = 0
@@ -1092,7 +1105,7 @@ class SimulationEngine:
         hold position). With predictive avoidance off the assessment still runs, for
         display and comparison, but does not influence the robot (reactive baseline)."""
         d = self.prediction.decide(r, self.path, self.waypoint_index, self.params["max_speed"], ROBOT_RADIUS,
-                                   self.params["safety_margin"])
+                                   self.params["safety_margin"], free_segment=self.grid.segment_free)
         if not self.params["predictive"]:
             return 1.0, False
         factor = d["speed_factor"]
@@ -1111,6 +1124,20 @@ class SimulationEngine:
         self._pred_action = action
         self._pred_factor = factor
 
+        if action == "evade":
+            if self._evade_target is None:  # keep one evade point until the conflict is over
+                self._evade_target = d["evade_to"]
+            self._pred_wait_since = None
+            return 1.0, False
+        if self._evade_target is not None and action == "stop":
+            return 1.0, False  # still in conflict: keep heading for (or holding) the evade point
+        if self._evade_target is not None:
+            # The conflict has passed: plan the route again from where the robot stepped aside.
+            self._evade_target = None
+            self._plan_cause = "resume"
+            self.status = "planning"
+            self._event("info", "prediction", "Object passed; replanning from the side position")
+            return 1.0, True
         waiting = action in ("wait", "stop")
         if waiting:
             self._pred_wait_since = self._pred_wait_since if self._pred_wait_since is not None else self.sim_time

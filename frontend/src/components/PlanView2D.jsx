@@ -29,7 +29,7 @@ function useExploredCells(enabled, online) {
 
 /** Accurate top-down plan view (also the fallback when WebGL is unavailable). */
 export const PlanView2D = forwardRef(function PlanView2D(
-  { telemetry, world, onPick, onHover, layers, effects, rejected, selectedObstacle, online, label },
+  { telemetry, world, onPick, onHover, layers, effects, rejected, selectedObstacle, online, label, places },
   ref,
 ) {
   const wrapRef = useRef(null);
@@ -52,9 +52,9 @@ export const PlanView2D = forwardRef(function PlanView2D(
   }, [telemetry]);
 
   useEffect(() => {
-    optsRef.current = { ...optsRef.current, layers, explored, effects, rejected, selectedObstacle };
+    optsRef.current = { ...optsRef.current, layers, explored, effects, rejected, selectedObstacle, places };
     dirtyRef.current = true;
-  }, [layers, explored, effects, rejected, selectedObstacle]);
+  }, [layers, explored, effects, rejected, selectedObstacle, places]);
 
   useEffect(() => {
     const el = wrapRef.current;

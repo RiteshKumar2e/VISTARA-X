@@ -89,6 +89,75 @@ def _crossing() -> World:
     return World(MAP_W, MAP_H, robot, obstacles)
 
 
+def _wall_with_doors(prefix, y, doors, t=0.2, door=1.6, height=2.4):
+    """Horizontal wall across the map at ``y`` with door openings centred on ``doors``."""
+    edges = [0.0]
+    for d in doors:
+        edges += [d - door / 2, d + door / 2]
+    edges.append(MAP_W)
+    out = []
+    for i in range(0, len(edges), 2):
+        x0, x1 = edges[i], edges[i + 1]
+        out.append(_rect(f"{prefix}-{i // 2 + 1}", "wall", (x0 + x1) / 2, y, x1 - x0, t, height=height))
+    return out
+
+
+def _hospital() -> World:
+    # A hospital ward floor: a 3 m corridor with rooms on both sides (door openings at
+    # x = 4, 10, 16). A nurse walks the corridor and gives way; a visitor crosses from
+    # Ward A to the Lab without giving way.
+    obstacles = [
+        *_wall_with_doors("wall-n", 7.6, (4.0, 10.0, 16.0)),
+        *_wall_with_doors("wall-s", 4.4, (4.0, 10.0, 16.0)),
+        _rect("div-n1", "wall", 7.0, 9.85, 0.2, 4.3, height=2.4),
+        _rect("div-n2", "wall", 13.0, 9.85, 0.2, 4.3, height=2.4),
+        _rect("div-s1", "wall", 7.0, 2.15, 0.2, 4.3, height=2.4),
+        _rect("div-s2", "wall", 13.0, 2.15, 0.2, 4.3, height=2.4),
+        _rect("reception-desk", "counter", 3.5, 10.6, 3.0, 0.6, height=1.05),
+        _rect("bed-a1", "bed", 8.6, 10.8, 1.0, 2.0, height=0.7),
+        _rect("bed-a2", "bed", 11.4, 10.8, 1.0, 2.0, height=0.7),
+        _rect("bed-b1", "bed", 14.6, 10.8, 1.0, 2.0, height=0.7),
+        _rect("bed-b2", "bed", 18.4, 10.8, 1.0, 2.0, height=0.7),
+        _rect("pharmacy-counter", "counter", 3.5, 1.0, 4.0, 0.6, height=1.05),
+        _rect("lab-bench", "counter", 10.0, 1.0, 4.0, 0.6, height=0.95),
+        _rect("icu-bed", "bed", 16.5, 1.4, 2.0, 1.0, height=0.7),
+        _rect("trolley-1", "trolley", 12.6, 7.05, 0.8, 0.5, height=1.0),
+        Obstacle(id="planter-1", label="planter", shape="circle", x=19.4, y=7.0, r=0.25, height=1.1),
+        Obstacle(id="nurse-1", label="person", shape="circle", x=6.0, y=5.3, r=0.3, height=1.7, dynamic=True,
+                 patrol=[(6.0, 5.3), (14.0, 5.3)], speed=0.6),
+        Obstacle(id="visitor-1", label="person", shape="circle", x=10.0, y=9.6, r=0.3, height=1.75, dynamic=True,
+                 patrol=[(10.0, 9.6), (10.0, 2.4)], speed=0.7, yields=False),
+    ]
+    robot = RobotState(x=1.5, y=6.0, theta=0.0)
+    return World(MAP_W, MAP_H, robot, obstacles)
+
+
+def _campus() -> World:
+    # An outdoor university plaza between six buildings, with trees, benches and a
+    # central fountain. Students walk along the plaza; one crosses it without giving way.
+    obstacles = [
+        _rect("library", "building", 3.0, 10.0, 5.0, 3.4, height=5.0),
+        _rect("admin-block", "building", 10.0, 10.4, 4.0, 2.6, height=4.2),
+        _rect("hostel", "building", 17.0, 10.0, 5.0, 3.4, height=5.6),
+        _rect("canteen", "building", 3.0, 2.0, 5.0, 3.2, height=3.6),
+        _rect("lab-block", "building", 10.5, 1.6, 4.0, 2.4, height=4.6),
+        _rect("auditorium", "building", 17.0, 2.0, 5.0, 3.2, height=5.0),
+        Obstacle(id="fountain", label="fountain", shape="circle", x=10.0, y=6.0, r=0.8, height=0.9),
+        Obstacle(id="tree-1", label="tree", shape="circle", x=6.8, y=7.6, r=0.45, height=3.2),
+        Obstacle(id="tree-2", label="tree", shape="circle", x=13.2, y=7.6, r=0.45, height=3.4),
+        Obstacle(id="tree-3", label="tree", shape="circle", x=6.8, y=4.4, r=0.45, height=3.0),
+        Obstacle(id="tree-4", label="tree", shape="circle", x=13.2, y=4.4, r=0.45, height=3.3),
+        _rect("bench-1", "bench", 10.0, 7.7, 1.2, 0.4, height=0.5),
+        _rect("bench-2", "bench", 8.4, 4.4, 1.2, 0.4, height=0.5),
+        Obstacle(id="student-1", label="person", shape="circle", x=2.0, y=7.0, r=0.3, height=1.7, dynamic=True,
+                 patrol=[(2.0, 7.0), (18.5, 7.0)], speed=0.8),
+        Obstacle(id="student-2", label="person", shape="circle", x=15.0, y=8.0, r=0.3, height=1.75, dynamic=True,
+                 patrol=[(15.0, 8.0), (15.0, 4.0)], speed=0.9, yields=False),
+    ]
+    robot = RobotState(x=1.2, y=5.6, theta=0.0)
+    return World(MAP_W, MAP_H, robot, obstacles)
+
+
 @dataclass(frozen=True)
 class Place:
     """A named destination users can ask for by voice or text. ``aliases`` are matched
@@ -165,6 +234,42 @@ SCENARIOS: dict[str, Scenario] = {
                       ("exit", "way out", "bahar", "nikas", "nikaas", "निकास", "बाहर", "एग्जिट", "एक्जिट")),
                 Place("midpoint", "Corridor midpoint", "गलियारे का बीच", 12.0, 6.0,
                       ("midpoint", "middle", "corridor", "beech", "गलियारा", "बीच")),
+            ),
+        ),
+        Scenario(
+            "hospital",
+            "Hospital ward",
+            "A ward corridor with rooms on both sides: deliver medicines between reception, wards, pharmacy, lab and ICU while a nurse and a visitor walk the corridor.",
+            (16.0, 2.9),
+            _hospital,
+            (
+                Place("start", "Corridor entrance", "गलियारे का प्रवेश", 1.5, 6.0, START_ALIASES + ("entrance", "प्रवेश")),
+                Place("reception", "Reception", "रिसेप्शन", 4.0, 9.3,
+                      ("reception", "front desk", "help desk", "swagat kaksh", "रिसेप्शन", "स्वागत कक्ष")),
+                Place("ward_a", "Ward A", "वार्ड ए", 9.0, 9.0, ("ward a", "ward 1", "वार्ड ए", "वार्ड 1")),
+                Place("ward_b", "Ward B", "वार्ड बी", 16.0, 9.2, ("ward b", "ward 2", "वार्ड बी", "वार्ड 2")),
+                Place("pharmacy", "Pharmacy", "फार्मेसी", 4.0, 2.6,
+                      ("pharmacy", "medicine store", "dawai", "dawakhana", "फार्मेसी", "दवाखाना", "दवाई")),
+                Place("lab", "Lab", "लैब", 11.0, 2.6, ("lab", "laboratory", "pathology", "लैब", "प्रयोगशाला")),
+                Place("icu", "ICU", "आईसीयू", 16.0, 2.9, ("icu", "intensive care", "आईसीयू")),
+                Place("exit", "Exit", "निकास", 19.0, 6.0,
+                      ("exit", "way out", "bahar", "nikas", "nikaas", "निकास", "बाहर", "एग्जिट")),
+            ),
+        ),
+        Scenario(
+            "campus",
+            "University campus",
+            "An outdoor plaza between six campus buildings: deliver parcels and food between the gate, library, canteen, hostel and labs around students and a fountain.",
+            (17.0, 7.5),
+            _campus,
+            (
+                Place("start", "Main gate", "मुख्य द्वार", 1.2, 5.6, START_ALIASES + ("gate", "main gate", "मुख्य द्वार", "गेट")),
+                Place("library", "Library", "पुस्तकालय", 3.0, 7.3, ("library", "pustakalay", "पुस्तकालय", "लाइब्रेरी")),
+                Place("admin", "Admin block", "प्रशासन भवन", 10.0, 8.4, ("admin block", "admin", "office", "प्रशासन", "एडमिन")),
+                Place("hostel", "Hostel", "छात्रावास", 17.0, 7.5, ("hostel", "chhatravas", "छात्रावास", "हॉस्टल")),
+                Place("canteen", "Canteen", "कैंटीन", 3.0, 4.7, ("canteen", "cafeteria", "mess", "कैंटीन", "कैफेटेरिया")),
+                Place("lab_block", "Lab block", "प्रयोगशाला भवन", 10.5, 3.6, ("lab block", "labs", "lab", "प्रयोगशाला", "लैब")),
+                Place("auditorium", "Auditorium", "सभागार", 17.0, 4.6, ("auditorium", "hall", "सभागार", "ऑडिटोरियम")),
             ),
         ),
         Scenario(

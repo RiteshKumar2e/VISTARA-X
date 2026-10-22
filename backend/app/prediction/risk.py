@@ -45,6 +45,9 @@ MIN_TTC_CONFIDENCE = 0.3
 UNCERTAIN_NEAR = 1.5
 UNCERTAIN_SPEED = 0.5
 SPEED_OPTIONS = ((1.0, "continue"), (0.5, "slow"), (0.25, "crawl"), (0.0, "wait"))
+EVADE_SPEED = 0.5  # m/s when stepping aside
+EVADE_DISTANCES = (0.7, 1.1, 1.5)
+EVADE_DIRECTIONS = 16
 # Prediction uncertainty: a pedestrian-like random acceleration of PRED_ACCEL_STD grows
 # the position sigma with the horizon. It is capped at SIGMA_CAP, otherwise every
 # option looks unsafe at 3 s and the robot never moves; tracks we cannot trust are
@@ -102,8 +105,30 @@ def near_route(track, robot_pos, dist: float) -> bool:
     return bool(d.min() < dist)
 
 
-def assess(pose, path, wp_index, nominal_speed, tracks, robot_radius, safety_margin) -> dict:
-    """Risk and predictive decision for the current tick."""
+def evade_point(pose, reliable, free_segment):
+    """Somewhere to step aside to when an object is heading for the robot: the reachable
+    point (16 directions x 0.7/1.1/1.5 m, straight line clear on the planning grid) whose
+    rollout - driving there at EVADE_SPEED, then waiting - keeps the largest predicted
+    margin to every trustworthy moving track. None if no point is conflict-free."""
+    best = None
+    t = TIMES
+    for k in range(EVADE_DIRECTIONS):
+        a = 2 * math.pi * k / EVADE_DIRECTIONS
+        for dist in EVADE_DISTANCES:
+            tx, ty = pose[0] + dist * math.cos(a), pose[1] + dist * math.sin(a)
+            if not free_segment(pose[0], pose[1], tx, ty):
+                break  # farther points in this direction are behind the same obstacle
+            s = np.minimum(EVADE_SPEED * t, dist) / dist
+            roll = np.column_stack([pose[0] + (tx - pose[0]) * s, pose[1] + (ty - pose[1]) * s])
+            margin = min((first_conflict(roll, pos, sig, req)[1] for _, pos, sig, req in reliable), default=9.0)
+            if margin >= 0 and (best is None or margin > best[0]):
+                best = (margin, (round(tx, 2), round(ty, 2)))
+    return best[1] if best else None
+
+
+def assess(pose, path, wp_index, nominal_speed, tracks, robot_radius, safety_margin, free_segment=None) -> dict:
+    """Risk and predictive decision for the current tick. ``free_segment(x0, y0, x1, y1)``
+    tells whether a straight move is clear on the planning grid (used to step aside)."""
     if len(path) < 2 or nominal_speed <= 0:
         return {"risk": "LOW", "action": "continue", "speed_factor": 1.0, "ttc": None, "track": None,
                 "reason": "No active route", "conflicts": [], "per_track": {}}
@@ -149,8 +174,10 @@ def assess(pose, path, wp_index, nominal_speed, tracks, robot_radius, safety_mar
         if factor == 1.0:
             blocker = hit
             conflicts.append({"track": hit[0].id, "t": hit[1], "x": round(float(hit[2][0]), 2), "y": round(float(hit[2][1]), 2)})
+    evade = None
     if chosen is None:
-        chosen = (0.0, "stop")
+        evade = evade_point(pose, reliable, free_segment) if free_segment else None
+        chosen = (0.0, "evade") if evade else (0.0, "stop")
     factor, action = chosen
     if uncertain and factor > UNCERTAIN_SPEED:
         factor, action = UNCERTAIN_SPEED, "slow"
@@ -164,6 +191,7 @@ def assess(pose, path, wp_index, nominal_speed, tracks, robot_radius, safety_mar
             "crawl": f"Predicted path conflict with {who} in {ttc:.1f} s: slowing to {int(factor * 100)}%",
             "wait": f"Predicted path conflict with {who} in {ttc:.1f} s: waiting for it to pass",
             "stop": f"{who} is predicted to reach the robot: stopped, replanning around its predicted path",
+            "evade": f"{who} is heading for the robot: stepping aside to ({evade[0]:.1f}, {evade[1]:.1f})" if evade else "",
         }[action]
         track_id, ttc_out = t.id, ttc
     elif uncertain:
@@ -182,6 +210,7 @@ def assess(pose, path, wp_index, nominal_speed, tracks, robot_radius, safety_mar
         "reason": reason,
         "conflicts": conflicts,
         "per_track": per_track,
+        "evade_to": evade,
     }
 
 

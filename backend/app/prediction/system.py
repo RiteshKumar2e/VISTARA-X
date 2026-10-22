@@ -76,9 +76,9 @@ class PredictionSystem:
         self._score_predictions(world, sim_time)
         self._near_misses(world)
 
-    def decide(self, robot, path, wp_index, nominal_speed, robot_radius, margin) -> dict:
+    def decide(self, robot, path, wp_index, nominal_speed, robot_radius, margin, free_segment=None) -> dict:
         self.decision = assess((robot.x, robot.y, robot.theta), path, wp_index, nominal_speed,
-                               self.tracker.tracks, robot_radius, margin)
+                               self.tracker.tracks, robot_radius, margin, free_segment)
         return self.decision
 
     def idle(self, reason: str = "No active route") -> None:
