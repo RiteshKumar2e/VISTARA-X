@@ -172,7 +172,7 @@ class SlamSession:
             # every scan adds nothing new: match only after motion, and fuse every
             # STATIONARY_FUSE_EVERY-th scan so that people walking past still update the map.
             # Without odometry the scan matcher is the only motion source: always match.
-            moved = odom_pose is None or self._matched_pose is None or (
+            moved = odom_pose is None or self._matched_pose is None or self.match_score is None or (
                 math.hypot(self.estimate[0] - self._matched_pose[0], self.estimate[1] - self._matched_pose[1]) > 0.01
                 or abs(_wrap(self.estimate[2] - self._matched_pose[2])) > math.radians(0.5)
             )

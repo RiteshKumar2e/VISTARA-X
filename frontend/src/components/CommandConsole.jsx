@@ -62,7 +62,7 @@ function speak(text, lang) {
   return null;
 }
 
-function CommandCard({ rec, onConfirm, onCancel, busy }) {
+function CommandCard({ rec, onConfirm, onCancel, busy, confirmRef }) {
   const [tone, label] = STATUS[rec.status] || ['muted', rec.status];
   const d = rec.intent.destination;
   const v = rec.validation;
@@ -132,7 +132,7 @@ function CommandCard({ rec, onConfirm, onCancel, busy }) {
       )}
       {rec.status === 'awaiting_confirmation' && (
         <div className="button-row">
-          <button type="button" className="btn btn-primary" disabled={busy} onClick={() => onConfirm(rec)}>
+          <button type="button" className="btn btn-primary" ref={confirmRef} disabled={busy} onClick={() => onConfirm(rec)}>
             <CheckIcon size={14} />
             Confirm and go
           </button>
@@ -162,6 +162,8 @@ export function CommandConsole({ telemetry, online, command }) {
   const [rec, setRec] = useState(null); // { since, level } while recording
   const [phase, setPhase] = useState(null); // 'transcribing' | 'loading'
   const recorder = useRef(null);
+  const resultRef = useRef(null);
+  const confirmRef = useRef(null);
   const scenario = telemetry?.scenario;
 
   useEffect(() => {
@@ -179,6 +181,14 @@ export function CommandConsole({ telemetry, online, command }) {
     },
     [spoken],
   );
+
+  // Bring a new result into view; a command waiting for confirmation gets keyboard focus
+  // on its Confirm button, so Enter confirms it.
+  useEffect(() => {
+    if (!current) return;
+    resultRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    if (current.status === 'awaiting_confirmation') confirmRef.current?.focus({ preventScroll: true });
+  }, [current?.id, current?.status]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const submit = async (value, source = 'text', meta = null) => {
     const t = value.trim();
@@ -379,6 +389,28 @@ export function CommandConsole({ telemetry, online, command }) {
         </div>
       </form>
 
+      {/* The result of the latest command sits directly under the input, so the Confirm
+          button is never off screen. */}
+      <div className="cmd-result" ref={resultRef}>
+        {error && (
+          <p className="feedback-msg feedback-error" role="alert">
+            <WarningIcon size={14} /> {error}
+          </p>
+        )}
+        {speechNote && <p className="hint">{speechNote}</p>}
+        <div aria-live="polite">
+          {current && (
+            <CommandCard
+              rec={current}
+              busy={busy}
+              confirmRef={confirmRef}
+              onConfirm={(r) => act(() => api.confirmCommand(r.id))}
+              onCancel={(r) => act(() => api.cancelCommand(r.id))}
+            />
+          )}
+        </div>
+      </div>
+
       <div className="cmd-voice">
         <div className="field-row">
           <div className="field">
@@ -491,14 +523,6 @@ export function CommandConsole({ telemetry, online, command }) {
         </label>
       </div>
 
-      {error && (
-        <p className="feedback-msg feedback-error" role="alert">
-          <WarningIcon size={14} /> {error}
-        </p>
-      )}
-      {speechNote && <p className="hint">{speechNote}</p>}
-
-      <div aria-live="polite">{current && <CommandCard rec={current} busy={busy} onConfirm={(r) => act(() => api.confirmCommand(r.id))} onCancel={(r) => act(() => api.cancelCommand(r.id))} />}</div>
 
       <h3 className="sub">Transcript history ({history.length})</h3>
       {history.length ? (
