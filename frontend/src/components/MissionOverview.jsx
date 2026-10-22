@@ -97,7 +97,7 @@ export function MissionOverview({ telemetry, backend, connection, command, onlin
         </button>
         <span className="ov-demo">
           <label className="check">
-            <input type="checkbox" checked={!!demoMode} disabled={!!pending} onChange={(e) => onDemoMode(e.target.checked)} />
+            <input type="checkbox" checked={!!demoMode} disabled={!online || !!pending} onChange={(e) => onDemoMode(e.target.checked)} />
             Demo mode
           </label>
           <Term tip="For slower laptops and live presentations: the 3D view renders at 20 fps without shadows at a pixel ratio of 1, and the robot's maximum speed is set to 0.6 m/s. Turning it off restores the previous speed.">

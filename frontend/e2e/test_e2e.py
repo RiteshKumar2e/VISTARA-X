@@ -79,7 +79,11 @@ _http = requests.Session()
 def backend(page: Page, method: str, path: str, data=None):
     """Direct HTTP to the backend, independent of the browser (whose request client can
     be starved while software WebGL renders). `page` is kept for call-site symmetry."""
-    return _http.request(method.upper(), f"{BACKEND}{path}", json=data, timeout=30)
+    try:
+        return _http.request(method.upper(), f"{BACKEND}{path}", json=data, timeout=30)
+    except requests.ConnectionError:
+        # uvicorn closes idle keep-alive connections after 5 s; a reused one can be dropped.
+        return _http.request(method.upper(), f"{BACKEND}{path}", json=data, timeout=30)
 
 
 def telemetry(page):
@@ -103,6 +107,8 @@ def open_console(page):
         time.sleep(1)
     else:
         raise AssertionError("backend reset failed")
+    # Reset keeps configuration; a test that failed mid-way must not leave the planner on the SLAM map.
+    backend(page, "post", "/mapping/planner", {"source": "simulator"})
     page.goto(FRONTEND + "/mission")
     expect(page.locator(".viewport [data-status]")).to_contain_text("Idle", timeout=15000)
 
@@ -243,7 +249,7 @@ def test_pages_titles_links_and_404(page):
         expect(page.locator("h1")).to_be_visible()
         titles.add(page.title())
         for href in page.eval_on_selector_all("a[href^='/']", "els => els.map(e => e.getAttribute('href'))"):
-            assert href in INTERNAL, f"unexpected internal link {href} on {route}"
+            assert href.split("#")[0] in INTERNAL, f"unexpected internal link {href} on {route}"
     assert len(titles) == len(ROUTES), titles
     page.goto(FRONTEND + "/does-not-exist")
     expect(page.locator("h1")).to_have_text("No route to this page")
@@ -380,6 +386,7 @@ def test_overview_process_and_tooltips(page):
     expect(page.locator("#process-detail")).to_contain_text("new A* plan")
     expect(page.get_by_role("link", name="Open the live mission")).to_have_attribute("href", "/mission")
     open_console(page)
+    open_tab(page, "Diagnostics")
     term = page.get_by_role("button", name="Replans")
     term.focus()
     tip = page.locator(".term", has=term).locator("[role=tooltip]")

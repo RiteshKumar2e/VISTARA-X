@@ -383,13 +383,13 @@ export default function Dashboard() {
 
       <EvaluationPanel online={online} evaluation={evaluation} />
 
-      <section className="systems" aria-labelledby="systems-title">
+      <div className="systems" role="region" aria-labelledby="systems-title">
         <div className="systems-head">
           <p className="eyebrow">Subsystems</p>
           <h2 id="systems-title">Systems and tools</h2>
         </div>
         <Tabs id="systems" label="Subsystems" value={systemTab} onChange={setSystemTab} className="systems-tabs" tabs={systems} />
-      </section>
+      </div>
       <Toaster telemetry={telemetry} />
     </div>
   );

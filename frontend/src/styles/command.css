@@ -90,11 +90,8 @@ body {
   border: var(--border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-panel);
-  position: sticky;
-  top: calc(var(--header-h) + 6px);
-  z-index: 15;
-  /* cover the strip between the header and the bar so content never peeks through */
-  box-shadow: 0 -7px 0 var(--color-bg), var(--shadow-panel);
+  /* Not sticky: it would cover the top of the map, where people click to set targets.
+     The viewport HUD and telemetry strip keep the mission state visible. */
 }
 .cb-state {
   display: flex;
@@ -187,8 +184,8 @@ body {
 }
 .ws-rail {
   position: sticky;
-  top: calc(var(--header-h) + 128px);
-  max-height: calc(100vh - var(--header-h) - 140px);
+  top: calc(var(--header-h) + 12px);
+  max-height: calc(100vh - var(--header-h) - 24px);
   overflow: auto;
   overscroll-behavior: contain;
   border-radius: var(--radius-lg);
@@ -823,8 +820,10 @@ body {
   margin: -10px 0 0;
   opacity: 0;
   cursor: pointer;
+  z-index: 1; /* the real checkbox receives the pointer; the track is decoration */
 }
 .switch-track {
+  pointer-events: none;
   width: 36px;
   height: 20px;
   border-radius: 10px;
@@ -1454,4 +1453,24 @@ details.scenario-info[open] > summary {
 }
 .console-title h1 {
   font-size: var(--text-lg);
+}
+
+.tool-pop:not([open]) > .tool-pop-body {
+  display: none;
+}
+@media (max-width: 1100px) {
+  .tool-pop-body,
+  .tool-pop-wide {
+    position: fixed;
+    left: 16px;
+    right: 16px;
+    top: auto;
+    width: auto;
+    max-height: 55vh;
+    overflow: auto;
+  }
+}
+.tab-list {
+  flex-wrap: wrap;
+  overflow: visible;
 }
