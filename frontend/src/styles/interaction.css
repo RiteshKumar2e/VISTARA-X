@@ -18,6 +18,13 @@ html.a11y-contrast {
   --color-success: #11501a;
   --color-warning: #6b3d00;
   --color-danger: #8a1510;
+  --color-on-accent: #ffffff;
+  --color-surface-raised: #ffffff;
+  --color-accent-soft: #e1eeec;
+  --color-success-soft: #e5efe4;
+  --color-warning-soft: #fbf0db;
+  --color-danger-soft: #f8e4e2;
+  color-scheme: light;
 }
 html.a11y-contrast :focus-visible {
   outline: 3px solid #000 !important;
@@ -510,7 +517,7 @@ html.a11y-contrast .panel {
   pointer-events: none;
 }
 .alert-float .alert-banner {
-  box-shadow: 0 6px 20px rgba(27, 29, 31, 0.18);
+  box-shadow: 0 10px 28px rgba(16, 24, 32, 0.16);
   pointer-events: none;
 }
 .alert-float .alert-banner button {

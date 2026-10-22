@@ -313,7 +313,7 @@ mark {
   color: #fff;
 }
 .btn-danger:hover:not(:disabled) {
-  background: #8a2722;
+  background: #a02a21;
   color: #fff;
 }
 .button-row {
@@ -498,7 +498,7 @@ fieldset {
   cursor: pointer;
 }
 .icon-btn:hover {
-  background: rgba(0, 0, 0, 0.06);
+  background: rgba(16, 24, 32, 0.06);
 }
 .dismissible {
   display: flex;
@@ -788,7 +788,7 @@ fieldset {
   gap: var(--space-2);
   text-align: center;
   padding: var(--space-4);
-  background: rgba(251, 250, 248, 0.92);
+  background: rgba(255, 255, 255, 0.92);
   font-size: var(--text-sm);
   color: var(--color-text-muted);
 }
@@ -840,7 +840,7 @@ fieldset {
   width: 10px;
   border: 2px solid var(--map-robot);
   border-radius: 50%;
-  background: #fff;
+  background: var(--sim-robot-edge);
 }
 .sw-path {
   height: 3px;
@@ -1064,7 +1064,7 @@ fieldset {
 .step-done .step-mark {
   background: var(--color-accent);
   border-color: var(--color-accent);
-  color: #fff;
+  color: var(--color-on-accent);
 }
 .step-current .step-mark {
   border-color: var(--color-accent);

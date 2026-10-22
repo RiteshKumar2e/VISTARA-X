@@ -3,12 +3,14 @@ import { Link } from 'react-router-dom';
 import { AlertCentre, useA11ySettings } from '../components/AlertCentre';
 import { ChallengePanel } from '../components/ChallengePanel';
 import { CommandConsole } from '../components/CommandConsole';
+import { DecisionTimeline } from '../components/DecisionTimeline';
 import { EvaluationPanel } from '../components/EvaluationPanel';
 import { MappingPanel } from '../components/MappingPanel';
 import { OperationsPanel } from '../components/OperationsPanel';
 import { PredictionPanel } from '../components/PredictionPanel';
 import { EventLog } from '../components/EventLog';
 import { GuidedDemo } from '../components/GuidedDemo';
+import { JudgeDemo } from '../components/JudgeDemo';
 import { MissionControls } from '../components/MissionControls';
 import { MissionOverview } from '../components/MissionOverview';
 import { ModelsPanel } from '../components/ModelsPanel';
@@ -17,10 +19,13 @@ import { PerceptionPanel } from '../components/PerceptionPanel';
 import { SensorsPanel } from '../components/SensorsPanel';
 import { SimulationViewport } from '../components/SimulationViewport';
 import { SystemStatus } from '../components/SystemStatus';
+import { Tabs } from '../components/Tabs';
 import { TelemetryPanel } from '../components/TelemetryPanel';
+import { TelemetryStrip } from '../components/TelemetryStrip';
 import { Toaster } from '../components/Toaster';
 import { useBackendStatus } from '../hooks/useBackendStatus';
 import { useCommand } from '../hooks/useCommand';
+import { useEvaluation } from '../hooks/useEvaluation';
 import { usePageMeta } from '../hooks/usePageMeta';
 import { useTelemetry } from '../hooks/useTelemetry';
 import { API_BASE_URL, api } from '../services/api';
@@ -91,6 +96,8 @@ export default function Dashboard() {
   const [lite, setLite] = useState(() => readStored('vistara.demoMode') === '1');
   const [challenge, setChallenge] = useState(null); // 'Trap the robot' game state
   const a11y = useA11ySettings();
+  const [railTab, setRailTab] = useState('mission');
+  const [systemTab, setSystemTab] = useState('demos');
 
   // Demo mode lowers 3D quality locally and the robot's max speed on the backend;
   // turning it off restores the speed that was set before.
@@ -109,6 +116,17 @@ export default function Dashboard() {
   };
   const online = backend.state === 'ok' && connection !== 'closed';
   const localEvents = useConnectionEvents(connection, backend.state);
+  const evaluation = useEvaluation(online);
+
+  const openJudgeDemo = () => {
+    setRailTab('judge');
+    // On desktop the rail is always in view; on stacked layouts bring it into view.
+    if (window.matchMedia('(max-width: 1180px)').matches) document.getElementById('rail')?.scrollIntoView({ block: 'start' });
+  };
+  const restartGuidedDemo = () => {
+    setSystemTab('demos');
+    setDemoSignal((n) => n + 1);
+  };
 
   useEffect(() => {
     if (backend.state !== 'ok') return;
@@ -124,6 +142,15 @@ export default function Dashboard() {
       cancelled = true;
     };
   }, [backend.state]);
+
+  // The page is lazy-loaded, so a deep link such as /mission#evaluation is honoured here.
+  const hashDone = useRef(false);
+  useEffect(() => {
+    if (hashDone.current || !telemetry) return;
+    hashDone.current = true;
+    const id = window.location.hash.slice(1);
+    if (id) requestAnimationFrame(() => document.getElementById(id)?.scrollIntoView({ block: 'start' }));
+  }, [telemetry]);
 
   // Drop a selection whose obstacle no longer exists (cleared or reset).
   useEffect(() => {
@@ -196,17 +223,65 @@ export default function Dashboard() {
     if (!ok) reject(point);
   };
 
+  const systems = [
+    { id: 'demos', label: 'Scripted demos', content: <GuidedDemo telemetry={telemetry} command={command} online={online} startSignal={demoSignal} /> },
+    { id: 'deliveries', label: 'Deliveries', content: <OperationsPanel telemetry={telemetry} online={online} command={command} /> },
+    { id: 'mapping', label: 'Mapping', content: <MappingPanel telemetry={telemetry} online={online} command={command} /> },
+    {
+      id: 'perception',
+      label: 'Perception',
+      content: (
+        <div className="split">
+          <PerceptionPanel telemetry={telemetry} command={command} online={online} />
+          <ModelsPanel telemetry={telemetry} command={command} online={online} />
+        </div>
+      ),
+    },
+    {
+      id: 'sensors',
+      label: 'Sensors and planning',
+      content: (
+        <div className="split">
+          <SensorsPanel telemetry={telemetry} command={command} online={online} />
+          <NavigationPanel telemetry={telemetry} online={online} />
+        </div>
+      ),
+    },
+    {
+      id: 'challenge',
+      label: 'Trap the robot',
+      content: (
+        <ChallengePanel
+          telemetry={telemetry}
+          command={command}
+          online={online}
+          challenge={challenge}
+          setChallenge={setChallenge}
+          setClickMode={setClickMode}
+          setObjectType={setObjectType}
+        />
+      ),
+    },
+    {
+      id: 'diagnostics',
+      label: 'Diagnostics',
+      content: (
+        <div className="split">
+          <TelemetryPanel telemetry={telemetry} connection={connection} />
+          <SystemStatus backend={backend} connection={connection} telemetry={telemetry} />
+        </div>
+      ),
+    },
+    { id: 'events', label: 'Event log', content: <EventLog events={telemetry?.events} localEvents={localEvents} /> },
+  ];
+
   return (
     <div className="console">
-      <div className="console-intro">
-        <div>
-          <h1>Live mission</h1>
-          <p className="muted">
-            Every value on this page comes from the running backend simulation. Select a target, start the mission, then drop an
-            obstacle on the route to watch it replan. New here? Use the <a href="#demo-title">guided demo</a> or read{' '}
-            <Link to="/architecture">how it works</Link>.
-          </p>
-        </div>
+      <div className="console-title">
+        <h1>Live mission</h1>
+        <p className="muted small">
+          Live backend simulation &middot; every value on this page is streamed from it &middot; <Link to="/architecture">how it works</Link>
+        </p>
       </div>
 
       {backend.state === 'down' && (
@@ -228,6 +303,8 @@ export default function Dashboard() {
         online={online}
         demoMode={lite}
         onDemoMode={toggleDemoMode}
+        scenarios={scenarios}
+        onJudgeDemo={openJudgeDemo}
       />
       <AlertCentre telemetry={telemetry} settings={a11y} />
 
@@ -237,8 +314,8 @@ export default function Dashboard() {
         </div>
       )}
 
-      <div className="console-grid">
-        <div className="col-main">
+      <div className="workspace">
+        <div className="ws-main">
           <SimulationViewport
             telemetry={telemetry}
             world={world}
@@ -254,54 +331,65 @@ export default function Dashboard() {
             selectedObstacle={selectedObstacle}
             lite={lite}
           />
-          <OperationsPanel telemetry={telemetry} online={online} command={command} />
-          <PredictionPanel telemetry={telemetry} online={online} command={command} />
-          <MappingPanel telemetry={telemetry} online={online} command={command} />
-          <div className="split">
-            <TelemetryPanel telemetry={telemetry} connection={connection} />
-            <PerceptionPanel telemetry={telemetry} command={command} online={online} />
-          </div>
-          <div className="split">
-            <SensorsPanel telemetry={telemetry} command={command} online={online} />
-            <NavigationPanel telemetry={telemetry} online={online} />
-          </div>
-          <EvaluationPanel online={online} />
-          <div className="split">
-            <ModelsPanel telemetry={telemetry} command={command} online={online} />
-          </div>
+          <TelemetryStrip telemetry={telemetry} connection={connection} />
         </div>
-        <div className="col-side">
-          <CommandConsole telemetry={telemetry} online={online} command={command} />
-          <MissionControls
-            telemetry={telemetry}
-            command={command}
-            online={online}
-            scenarios={scenarios}
-            world={world}
-            clickMode={clickMode}
-            setClickMode={setClickMode}
-            onRestartDemo={() => setDemoSignal((n) => n + 1)}
-            selectedObstacle={selectedObstacle}
-            onRemoveObstacle={async () => {
-              const id = selectedObstacle;
-              const ok = await command.run('remove', () => api.removeObstacle(id), () => `Obstacle ${id} removed`);
-              if (ok) setSelectedObstacle(null);
-            }}
+        <aside className="ws-rail" id="rail" aria-label="Mission command">
+          <Tabs
+            id="rail"
+            label="Mission command"
+            value={railTab}
+            onChange={setRailTab}
+            className="rail-tabs"
+            tabs={[
+              {
+                id: 'mission',
+                label: 'Mission control',
+                content: (
+                  <>
+                    <MissionControls
+                      telemetry={telemetry}
+                      command={command}
+                      online={online}
+                      scenarios={scenarios}
+                      world={world}
+                      clickMode={clickMode}
+                      setClickMode={setClickMode}
+                      onRestartDemo={restartGuidedDemo}
+                      selectedObstacle={selectedObstacle}
+                      onRemoveObstacle={async () => {
+                        const id = selectedObstacle;
+                        const ok = await command.run('remove', () => api.removeObstacle(id), () => `Obstacle ${id} removed`);
+                        if (ok) setSelectedObstacle(null);
+                      }}
+                    />
+                    <CommandConsole telemetry={telemetry} online={online} command={command} />
+                  </>
+                ),
+              },
+              {
+                id: 'judge',
+                label: 'Judge demo',
+                content: <JudgeDemo telemetry={telemetry} command={command} online={online} evaluation={evaluation.data} />,
+              },
+            ]}
           />
-          <ChallengePanel
-            telemetry={telemetry}
-            command={command}
-            online={online}
-            challenge={challenge}
-            setChallenge={setChallenge}
-            setClickMode={setClickMode}
-            setObjectType={setObjectType}
-          />
-          <GuidedDemo telemetry={telemetry} command={command} online={online} startSignal={demoSignal} />
-          <SystemStatus backend={backend} connection={connection} telemetry={telemetry} />
-          <EventLog events={telemetry?.events} localEvents={localEvents} />
-        </div>
+        </aside>
       </div>
+
+      <div className="intel-row">
+        <PredictionPanel telemetry={telemetry} online={online} command={command} />
+        <DecisionTimeline events={telemetry?.events} />
+      </div>
+
+      <EvaluationPanel online={online} evaluation={evaluation} />
+
+      <section className="systems" aria-labelledby="systems-title">
+        <div className="systems-head">
+          <p className="eyebrow">Subsystems</p>
+          <h2 id="systems-title">Systems and tools</h2>
+        </div>
+        <Tabs id="systems" label="Subsystems" value={systemTab} onChange={setSystemTab} className="systems-tabs" tabs={systems} />
+      </section>
       <Toaster telemetry={telemetry} />
     </div>
   );

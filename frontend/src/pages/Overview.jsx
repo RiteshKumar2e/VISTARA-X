@@ -1,8 +1,79 @@
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { MissionProcess } from '../components/MissionProcess';
 import { StatusTag } from '../components/StatusTag';
 import { APPLICATIONS, LIMITATIONS, MARKET, MISSION, PROBLEM, SOLUTION, TEAM } from '../content/deck';
 import { usePageMeta } from '../hooks/usePageMeta';
+import { api } from '../services/api';
+
+/** Recorded predictive-vs-reactive results, straight from GET /evaluation. */
+function HeroEvidence() {
+  const [state, setState] = useState({ status: 'loading' });
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .evaluation()
+      .then((d) => !cancelled && setState({ status: 'ok', data: d }))
+      .catch(() => !cancelled && setState({ status: 'unavailable' }));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const cmp = state.data?.comparison;
+  return (
+    <aside className="hero-evidence" aria-labelledby="hero-evidence-title">
+      <p className="eyebrow">Recorded evaluation</p>
+      <h2 id="hero-evidence-title">Predictive vs reactive, same crossing scenario</h2>
+      {state.status === 'ok' && cmp ? (
+        <>
+          <table className="he-table">
+            <thead>
+              <tr>
+                <th scope="col">
+                  <span className="sr-only">Metric</span>
+                </th>
+                <th scope="col">Predictive</th>
+                <th scope="col">Reactive</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <th scope="row">Goal reached</th>
+                <td className="mono">{cmp.predictive.goal_completion}</td>
+                <td className="mono">{cmp.reactive.goal_completion}</td>
+              </tr>
+              <tr>
+                <th scope="row">Collisions</th>
+                <td className="mono">{cmp.predictive.collisions_total}</td>
+                <td className="mono">{cmp.reactive.collisions_total}</td>
+              </tr>
+              <tr>
+                <th scope="row">Near misses</th>
+                <td className="mono">{cmp.predictive.near_misses_total}</td>
+                <td className="mono">{cmp.reactive.near_misses_total}</td>
+              </tr>
+              <tr>
+                <th scope="row">Worst clearance</th>
+                <td className="mono">{cmp.predictive.min_clearance_worst_m?.toFixed(2)} m</td>
+                <td className="mono">{cmp.reactive.min_clearance_worst_m?.toFixed(2)} m</td>
+              </tr>
+            </tbody>
+          </table>
+          <p className="muted small">
+            {cmp.predictive.runs} simulated runs per mode (person speed and timing varied), generated {state.data.generated_at.slice(0, 10)}{' '}
+            by <code>{state.data.command}</code>. Simulation only; not a measure of real-world safety.
+          </p>
+        </>
+      ) : (
+        <p className="muted small">
+          {state.status === 'loading'
+            ? 'Loading recorded results...'
+            : 'Start the backend to show the recorded results here; the live mission page also shows them.'}
+        </p>
+      )}
+    </aside>
+  );
+}
 
 export default function Overview() {
   usePageMeta(
@@ -12,24 +83,42 @@ export default function Overview() {
 
   return (
     <div className="overview">
-      <header className="hero">
-        <p className="eyebrow">
-          Team {TEAM.name} &middot; {TEAM.event}
-        </p>
-        <h1>VISTARA-X</h1>
-        <p className="hero-tagline">Beyond Seeing. Into Understanding.</p>
-        <p className="lede">{SOLUTION.summary}</p>
-        <p className="hero-mission">
-          <span className="muted">Mission:</span> &ldquo;{MISSION}&rdquo;
-        </p>
-        <div className="button-row">
-          <Link className="btn btn-primary btn-lg" to="/mission">
-            Open the live mission
-          </Link>
-          <Link className="btn btn-lg" to="/architecture">
-            Explore the architecture
-          </Link>
+      <header className="hero hero-split">
+        <div className="hero-copy">
+          <p className="eyebrow">
+            Team {TEAM.name} &middot; {TEAM.event}
+          </p>
+          <h1>VISTARA-X</h1>
+          <p className="hero-tagline">Beyond Seeing. Into Understanding.</p>
+          <p className="hero-claim">
+            A robot that <strong>anticipates</strong> navigation conflicts instead of only reacting to obstacles.
+          </p>
+          <p className="lede">
+            VISTARA-X tracks moving people with simulated LiDAR, predicts where they will be over the next three seconds, checks those
+            predictions against its own route, and slows, waits, steps aside or replans before the paths meet, explaining every
+            decision.
+          </p>
+          <div className="button-row">
+            <Link className="btn btn-primary btn-lg" to="/mission">
+              Open the live mission
+            </Link>
+            <a className="btn btn-lg" href="/mission#evaluation">
+              See the evidence
+            </a>
+            <Link className="btn btn-lg btn-quiet" to="/architecture">
+              Explore the architecture
+            </Link>
+          </div>
+          <ol className="hero-loop" aria-label="Navigation loop">
+            {['Perceive', 'Track', 'Predict', 'Assess risk', 'Decide', 'Navigate'].map((s, i) => (
+              <li key={s}>
+                <span className="mono">{String(i + 1).padStart(2, '0')}</span>
+                {s}
+              </li>
+            ))}
+          </ol>
         </div>
+        <HeroEvidence />
       </header>
 
       <section className="section" aria-labelledby="problem-h">

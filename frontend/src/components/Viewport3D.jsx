@@ -45,7 +45,8 @@ const Viewport3D = forwardRef(function Viewport3D(
     const host = hostRef.current;
     const resize = () => {
       const w = host.clientWidth;
-      const h = Math.round(Math.min(Math.max(w * 0.62, 300), 680));
+      // Fill the workspace on laptop screens without pushing the page below the fold.
+      const h = Math.round(Math.max(300, Math.min(w * 0.6, Math.max(380, window.innerHeight - 270), 780)));
       sim.resize(w, h);
     };
     const ro = new ResizeObserver(resize);

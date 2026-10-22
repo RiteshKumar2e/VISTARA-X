@@ -163,8 +163,13 @@ export function OperationsPanel({ telemetry, online, command }) {
             disabled={busy}
             onClick={() => command.run('ops', () => api.opsConfig({ battery: 25 }), () => 'Battery set to 25% (demo)')}
           >
-            <Term tip="Demo control: sets the simulated charge to 25% so you can watch the robot finish its job, return to the dock and charge.">Simulate low battery</Term>
+            Simulate low battery
           </button>
+          {/* The explanation sits beside the button: a tooltip button inside a button is invalid HTML. */}
+          <Term tip="Demo control: sets the simulated charge to 25% so you can watch the robot finish its job, return to the dock and charge.">
+            <span aria-hidden="true">?</span>
+            <span className="sr-only">About simulate low battery</span>
+          </Term>
         </div>
       </div>
       <p className="muted small">{ops.battery.rates}</p>

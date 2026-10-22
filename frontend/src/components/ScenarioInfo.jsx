@@ -21,7 +21,7 @@ const INFO = {
       'Steps aside when someone walks straight at it',
       'Measured here: 0 collisions in 9 runs vs 2 for a purely reactive robot (simulation)',
     ],
-    tryIt: 'Click "Run predictive demo" in the Guided demo card.',
+    tryIt: 'Open the Judge demo tab beside the viewport and click "Run judge demo"; then run it again with the reactive baseline.',
   },
   hospital: {
     setting: 'Hospital delivery',
@@ -63,10 +63,10 @@ export function ScenarioInfo({ scenario }) {
   const info = INFO[scenario];
   if (!info) return null;
   return (
-    <aside className="scenario-info" aria-label="Real-world use of this scenario">
-      <p className="scenario-info-head">
+    <details className="scenario-info">
+      <summary className="scenario-info-head">
         <InfoIcon size={14} /> <strong>Real-world use: {info.setting}</strong>
-      </p>
+      </summary>
       <p className="small">{info.real}</p>
       <ul className="scenario-benefits">
         {info.benefits.map((b) => (
@@ -81,6 +81,6 @@ export function ScenarioInfo({ scenario }) {
       <p className="muted small">
         Intended use only. This is a simulation; VISTARA-X has not been deployed or validated in a real {info.setting.toLowerCase()} setting.
       </p>
-    </aside>
+    </details>
   );
 }

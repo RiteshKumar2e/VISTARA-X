@@ -9,6 +9,7 @@ import './styles/app.css';
 import './styles/pages.css';
 import './styles/viewport.css';
 import './styles/interaction.css';
+import './styles/command.css';
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>

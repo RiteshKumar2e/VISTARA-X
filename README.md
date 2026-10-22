@@ -476,28 +476,44 @@ The end-to-end suite accepts `E2E_BACKEND_URL` and `E2E_FRONTEND_URL` to target 
 | *Speak a command* is disabled or says Whisper unavailable | `pip install faster-whisper`; the first use downloads the model (internet needed once). Typed commands always work. |
 | Microphone permission denied | Allow the microphone for the site in the browser, or type the command. |
 | Voice commands are slow | Whisper runs on the CPU: pick the spoken language (skips detection) or use `VISTARA_WHISPER_MODEL=tiny`. |
-| Robot moves slowly or telemetry shows *Delayed* on a low-power laptop | The browser is competing with the simulation for CPU. Tick **Demo mode** in the mission overview (20 fps 3D without shadows, robot speed 0.6 m/s; unticking restores the previous speed), untick **Motion effects** or use the **Plan** view; close other heavy tabs. The backend raises itself to above-normal priority on Windows (`VISTARA_HIGH_PRIORITY`). |
+| Robot moves slowly or telemetry shows *Delayed* on a low-power laptop | The browser is competing with the simulation for CPU. Tick **Demo mode** in the command bar (20 fps 3D without shadows, robot speed 0.6 m/s; unticking restores the previous speed), untick **Motion effects** or use the **Plan** view; close other heavy tabs. The backend raises itself to above-normal priority on Windows (`VISTARA_HIGH_PRIORITY`). |
 
 ## Judge demonstration guide
 
 No code edits are needed. Start both applications (Windows: `backend\start.bat` and `frontend\start.bat`, or see *Getting started*), open `http://localhost:5173/mission`, and tick **Demo mode** on a slower laptop.
 
-**Main demo (predictive navigation, about 1 minute):** click **Run predictive demo** in the Guided demo card. It loads the crossing corridor and drives to the exit. Each line of its checklist is ticked only from live telemetry.
+### Dashboard layout
+
+The mission page (`/mission`) is one workspace, top to bottom:
+
+- **Command bar** (stays visible while scrolling): mission state, scenario, destination, progress, Start / Pause / Halt, **Judge demo**, Demo mode and system health.
+- **Simulation viewport** (3D digital twin or top-down plan) with the **telemetry strip** beneath it: link, state, position, heading, speed, route, obstacles, clearance and simulation time. Layers and the legend are in the viewport toolbar.
+- **Command rail** beside the viewport: *Mission control* (start/stop/reset, target, scenario, parameters, typed or spoken commands with confirmation) and *Judge demo*.
+- **Prediction and risk** (predictive intelligence): the current decision as a headline (for example *CONFLICT PREDICTED, reducing speed to 50%*), the LOW/MEDIUM/HIGH risk level, commanded speed, the reason, time to conflict on a 0-3 s horizon, the predicted positions of the most relevant track, and a robot-centred conflict radar. Next to it, the **Decision timeline** lists the plan, prediction and response events from the backend.
+- **Evaluation: predictive vs reactive**: the recorded results of `python -m app.evaluation`, with provenance, side-by-side metrics and the closest approach of every run.
+- **Systems and tools** tabs: scripted demos, deliveries, mapping, perception and models, sensors and planning, the trap-the-robot challenge, diagnostics and the full event log.
+
+Every value is read from the backend; when a value is not available the page says so.
+
+**Main demo (predictive navigation, 60-90 seconds):** click **Judge demo** in the command bar, keep *Predictive* selected and click **Run judge demo**. It loads the crossing corridor (a person who does not give way, a cart that turns) and drives to the exit. Its eight steps are ticked only from telemetry or the backend event log.
 
 | # | What you see | Where |
 |---|---|---|
-| 1 | The person and the cart appear as tracks (T1, T2…) with their speed; the predicted positions at 0.5/1/2/3 s are drawn with uncertainty circles, coloured by risk. | Plan or 3D view, *Prediction and risk* table |
-| 2 | Before the robot reaches the person's line, the risk turns MEDIUM or HIGH, with a time to conflict and a red conflict marker. | Risk card, viewport |
-| 3 | The robot slows or waits, and says why: *Predicted path conflict with track 1 in 2.7 s: slowing to 50%*. | Risk card, event log, alert centre |
-| 4 | The person passes, the risk returns to LOW, and the robot continues to the exit with 0 collisions. The closest approach to a moving obstacle is shown. | Risk card metrics, overview strip |
-| 5 | Untick **Predictive avoidance** and run the demo again: the reactive baseline only reacts once the obstacle is on the route. Compare in the *Evaluation* panel. | Prediction panel, Evaluation panel |
+| 1 | The route is planned to the exit; the person appears as track T1 with its speed. | Viewport, Judge demo |
+| 2 | The person's predicted positions at 0.5/1/2/3 s are drawn with uncertainty circles. | Viewport, conflict radar, predicted-position cells |
+| 3 | Before the paths meet, the risk turns MEDIUM or HIGH with a time to conflict and a conflict marker. | Prediction and risk, viewport |
+| 4 | The robot slows, waits or replans and says why, for example *Predicted path conflict with track 1 (person) in 2.7 s: slowing to 50%*. | Headline, Decision timeline |
+| 5 | The way clears, the robot resumes and reaches the exit; the outcome step reports time, replans and collisions. | Judge demo, command bar |
+| 6 | Select *Reactive baseline* and run it again: predictions are shown but not acted on. Then scroll to the evaluation for the recorded 9-run comparison. | Judge demo, Evaluation |
+
+The older scripted demos (warehouse replanning, predictive crossing, blocked route) are under **Systems and tools > Scripted demos**.
 
 **Also show (each under a minute):**
 
-- **Voice or text:** in the Commands panel, type or say *Robot ko exit tak le jao*. The card shows the transcript, language, destination and route; confirm it. For the text-only run, open *Display and alert settings* > **Accessible mode** and use only the keyboard.
-- **Mapping:** in the Mapping panel, click **Explore and map automatically**, or load `warehouse_demo`.
+- **Voice or text:** in the Commands panel (Mission control tab), type or say *Robot ko exit tak le jao*. The card shows the transcript, language, destination and route; confirm it. For the text-only run, open *Display and alert settings* > **Accessible mode** and use only the keyboard.
+- **Mapping:** in *Systems and tools > Mapping*, click **Explore and map automatically**, or load `warehouse_demo`.
 - **Blocked route after start:** in the warehouse, start a mission and click **Drop obstacle on route**. The robot stops, replans and continues.
-- **Unreachable destination:** click **Run blocked-route demo**. The status shows *Blocked*, the robot travels 0.00 m, and a red banner appears. Typing *take the robot to the cafeteria* gets a clarification question instead of a guessed place.
+- **Unreachable destination:** click **Run blocked-route demo** (Scripted demos tab). The status shows *Blocked*, the robot travels 0.00 m, and a red banner appears. Typing *take the robot to the cafeteria* gets a clarification question instead of a guessed place.
 - **Emergency stop** (Commands panel) halts the robot at any time.
 
 ### Mission states

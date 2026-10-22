@@ -60,8 +60,21 @@ function PredictiveDemo({ telemetry, command, online }) {
     if (!seen || !p || telemetry.scenario !== 'crossing') return;
     const next = { ...seen };
     if (p.tracks.some((t) => t.moving && t.state === 'confirmed')) next.tracked = next.tracked || 'yes';
-    if (p.ttc != null && (p.risk === 'MEDIUM' || p.risk === 'HIGH') && !next.predicted) next.predicted = `${p.risk}: ${p.reason}`;
-    if (['slow', 'crawl', 'wait', 'stop'].includes(p.action) && !next.acted) next.acted = p.reason;
+    // Conflict states can last less than one rendered frame on a slow machine, so the backend
+    // event log (which keeps them) is checked as well as the live prediction.
+    const logged = (telemetry.events || []).filter((e) => e.type === 'prediction');
+    const conflict = logged.find((e) => e.data && (e.data.risk === 'MEDIUM' || e.data.risk === 'HIGH'));
+    if (!next.predicted) {
+      if (p.ttc != null && (p.risk === 'MEDIUM' || p.risk === 'HIGH')) next.predicted = `${p.risk}: ${p.reason}`;
+      else if (conflict) next.predicted = `${conflict.data.risk}: ${conflict.message}`;
+    }
+    if (!next.acted) {
+      if (['slow', 'crawl', 'wait', 'stop', 'evade'].includes(p.action)) next.acted = p.reason;
+      else {
+        const acted = logged.find((e) => /slowing|waiting|stepping aside|stopped/i.test(e.message));
+        if (acted) next.acted = acted.message;
+      }
+    }
     if (m?.status === 'goal_reached' && !next.done) next.done = `${m.elapsed.toFixed(1)} s, collisions ${telemetry.safety.collisions}`;
     if (JSON.stringify(next) !== JSON.stringify(seen)) setSeen(next);
   }, [telemetry]); // eslint-disable-line react-hooks/exhaustive-deps

@@ -135,7 +135,6 @@ export function SimulationViewport({
     label,
   };
 
-  const physics = telemetry?.safety?.physics;
   const p = telemetry?.perception;
   const conn = { open: 'Live', stale: 'Delayed', connecting: 'Connecting', closed: 'Offline' }[connection];
 
@@ -143,12 +142,12 @@ export function SimulationViewport({
     <section className="panel viewport" id="simulator" aria-labelledby="viewport-title">
       <div className="panel-head">
         <h2 id="viewport-title">Mission workspace</h2>
+        <span className="vp-sub muted small">Live simulation &middot; {activeView === '3d' ? '3D digital twin' : 'top-down plan'}</span>
         <ul className="chips-row" aria-label="Simulation mode">
           <li className={`chip chip-${connection === 'open' ? 'ok' : connection === 'closed' ? 'down' : 'warn'}`}>
             <span className="chip-dot" aria-hidden="true" />
             Telemetry: {conn}
           </li>
-          {physics && <li className="chip">Physics: {physics === 'pybullet' ? 'PyBullet' : 'analytic 2D'}</li>}
           {p && <li className="chip">Detector: {p.mode === 'yolov8' ? 'YOLOv8' : 'simulated (ground truth)'}</li>}
         </ul>
       </div>
@@ -192,8 +191,8 @@ export function SimulationViewport({
           value={clickMode}
           onChange={setClickMode}
           options={[
-            ['target', 'Select destination', CrosshairIcon],
-            ['obstacle', 'Add obstacle', ObstacleIcon],
+            ['target', 'Destination', CrosshairIcon],
+            ['obstacle', 'Obstacle', ObstacleIcon],
           ]}
         />
         {clickMode === 'obstacle' && (
@@ -209,15 +208,40 @@ export function SimulationViewport({
             </select>
           </div>
         )}
-      </div>
-
-      <div className="toolbar toolbar-sub" role="group" aria-label="Overlays">
-        {LAYERS.filter(([, , only]) => !only || only === activeView).map(([key, text]) => (
-          <label key={key} className="check">
-            <input type="checkbox" checked={layers[key]} onChange={() => setLayers((l) => ({ ...l, [key]: !l[key] }))} />
-            {text}
-          </label>
-        ))}
+        <details className="tool-pop">
+          <summary className="tool-btn">Layers</summary>
+          <div className="tool-pop-body" role="group" aria-label="Overlays">
+            {LAYERS.filter(([, , only]) => !only || only === activeView).map(([key, text]) => (
+              <label key={key} className="check">
+                <input type="checkbox" checked={layers[key]} onChange={() => setLayers((l) => ({ ...l, [key]: !l[key] }))} />
+                {text}
+              </label>
+            ))}
+          </div>
+        </details>
+        <details className="tool-pop">
+          <summary className="tool-btn">Legend</summary>
+          <div className="tool-pop-body tool-pop-wide">
+            <ul className="legend" aria-label="Legend">
+              <li><span className="sw sw-robot" aria-hidden="true" />Robot (0.3 m radius, camera at 0.5 m)</li>
+              <li><span className="sw sw-path" aria-hidden="true" />A* route, active waypoint ringed</li>
+              <li><span className="sw sw-ghost" aria-hidden="true" />Previous route after a replan</li>
+              <li><span className="sw sw-target" aria-hidden="true" />Destination</li>
+              <li><span className="sw sw-static" aria-hidden="true" />Static obstacle</li>
+              <li><span className="sw sw-dynamic" aria-hidden="true" />Added obstacle</li>
+              <li><span className="sw sw-person" aria-hidden="true" />Person (moving)</li>
+              <li><span className="sw sw-alert" aria-hidden="true" />Obstacle that blocked the route</li>
+              <li><span className="sw sw-inflation" aria-hidden="true" />Planner safety zone (radius + margin)</li>
+              <li><span className="sw sw-fov" aria-hidden="true" />Camera field of view (simulated camera, {p?.camera ? `${p.camera.fov_deg}°, ${p.camera.range} m` : '70°'})</li>
+              <li><span className="sw sw-detect" aria-hidden="true" />In view of the simulated detector</li>
+              <li><span className="sw sw-lidar" aria-hidden="true" />Simulated LiDAR returns (orange: within slow-down distance)</li>
+              <li><span className="sw sw-predict" aria-hidden="true" />LiDAR track with predicted positions at 0.5, 1, 2, 3 s and uncertainty (colour = risk; dashed = uncertain)</li>
+              <li><span className="sw sw-conflict" aria-hidden="true">&times;</span>Predicted conflict point</li>
+              <li><span className="sw sw-prox" aria-hidden="true" />Robot ring: amber slowing, red stopped</li>
+              <li><span className="sw sw-track" aria-hidden="true">&times;</span>Camera-derived track</li>
+            </ul>
+          </div>
+        </details>
         <label className="check check-sep">
           <input type="checkbox" checked={effects} onChange={(e) => setEffects(e.target.checked)} />
           Motion effects
@@ -308,24 +332,6 @@ export function SimulationViewport({
           Robot pose is smoothed between telemetry samples and never extrapolated. Obstacle models are drawn at their simulated
           footprint and height; racking, cartons and the robot body are visual detail.
         </p>
-        <ul className="legend" aria-label="Legend">
-          <li><span className="sw sw-robot" aria-hidden="true" />Robot (0.3 m radius, camera at 0.5 m)</li>
-          <li><span className="sw sw-path" aria-hidden="true" />A* route, active waypoint ringed</li>
-          <li><span className="sw sw-ghost" aria-hidden="true" />Previous route after a replan</li>
-          <li><span className="sw sw-target" aria-hidden="true" />Destination</li>
-          <li><span className="sw sw-static" aria-hidden="true" />Static obstacle</li>
-          <li><span className="sw sw-dynamic" aria-hidden="true" />Added obstacle</li>
-          <li><span className="sw sw-person" aria-hidden="true" />Person (moving)</li>
-          <li><span className="sw sw-alert" aria-hidden="true" />Obstacle that blocked the route</li>
-          <li><span className="sw sw-inflation" aria-hidden="true" />Planner safety zone (radius + margin)</li>
-          <li><span className="sw sw-fov" aria-hidden="true" />Camera field of view (simulated camera, {p?.camera ? `${p.camera.fov_deg}°, ${p.camera.range} m` : '70°'})</li>
-          <li><span className="sw sw-detect" aria-hidden="true" />In view of the simulated detector</li>
-          <li><span className="sw sw-lidar" aria-hidden="true" />Simulated LiDAR returns (orange: within slow-down distance)</li>
-          <li><span className="sw sw-predict" aria-hidden="true" />LiDAR track with predicted positions at 0.5, 1, 2, 3 s and uncertainty (colour = risk; dashed = uncertain)</li>
-          <li><span className="sw sw-conflict" aria-hidden="true">&times;</span>Predicted conflict point</li>
-          <li><span className="sw sw-prox" aria-hidden="true" />Robot ring: amber slowing, red stopped</li>
-          <li><span className="sw sw-track" aria-hidden="true">&times;</span>Camera-derived track</li>
-        </ul>
       </div>
       <ScenarioInfo scenario={scenario} />
     </section>

@@ -107,6 +107,11 @@ def open_console(page):
     expect(page.locator(".viewport [data-status]")).to_contain_text("Idle", timeout=15000)
 
 
+def open_tab(page, name):
+    """Show a subsystem panel: secondary panels live in the "Systems and tools" tabs."""
+    page.get_by_role("tab", name=name, exact=True).click()
+
+
 def click_world(page, x, y):
     """Click the plan-view canvas at world coordinates (matches renderer.makeView)."""
     page.locator(".plan-view canvas").scroll_into_view_if_needed()
@@ -146,6 +151,7 @@ def test_full_mission_via_ui(page, demo_speed):
     hist = telemetry(page)["replan_history"]
     assert hist[-1]["cause"] == "obstruction" and hist[-1]["validated"] is True
     expect(page.locator("#navigation")).to_contain_text("Route obstructed")
+    open_tab(page, "Sensors and planning")
     expect(page.locator("#navigation canvas.grid-canvas")).to_be_visible()
     # Dismiss the newest notification (older ones may be auto-dismissing after 8 s).
     # New toasts keep arriving (the patrolling person causes replans), so the stack is
@@ -423,6 +429,7 @@ def test_sensors_models_and_obstacle_removal(page):
     open_console(page)
     for name in ("lidar", "ultrasonic"):
         backend(page, "post", "/sensors/configure", {"sensor": name, "enabled": True})
+    open_tab(page, "Sensors and planning")
     sensors = page.locator(".sensors")
     expect(sensors).to_contain_text("All simulated")
     expect(sensors).to_contain_text("2D LiDAR (simulated)")
@@ -445,6 +452,7 @@ def test_sensors_models_and_obstacle_removal(page):
     expect(sensors.locator(".prox")).not_to_contain_text("Fail-safe", timeout=10000)
     page.get_by_role("button", name="Stop", exact=True).click()
     # Model registry lists the simulated detector and is driven by the backend.
+    open_tab(page, "Perception")
     models = page.locator("section", has=page.locator("#models-title"))
     expect(models).to_contain_text("Ground truth, not a model")
     assert backend(page, "get", "/models").json()["models"][0]["key"] == "simulated"
@@ -552,6 +560,7 @@ def test_demo_mode_lowers_speed_and_restores_it(page):
 def test_trap_the_robot_challenge(page):
     open_console(page)
     speed = telemetry(page)["params"]["max_speed"]
+    open_tab(page, "Trap the robot")
     panel = page.locator("#challenge")
     panel.get_by_role("button", name="Start challenge").click()
     expect(panel).to_contain_text("5 of 5 barriers left")
@@ -625,6 +634,7 @@ def test_voice_command_through_fake_microphone(browser_with_mic):
 
 def test_mapping_panel_explore_save_and_planner(page):
     open_console(page)
+    open_tab(page, "Mapping")
     panel = page.locator("#mapping")
     expect(panel).to_contain_text("Simulation-generated")
     panel.get_by_role("button", name="Explore and map automatically").click()
@@ -684,4 +694,27 @@ def test_predictive_demo_and_baseline_toggle(page):
     expect(page.locator("#prediction .risk-card")).to_contain_text("reactive baseline")
     toggle.click()
     wait_backend(page, lambda t: t["params"]["predictive"] is True, timeout=10)
+    assert not page.errors, page.errors
+
+
+def test_judge_demo_and_recorded_evidence(page):
+    open_console(page)
+    page.get_by_role("button", name="Judge demo", exact=True).click()
+    page.get_by_role("button", name="Run judge demo").click()
+    wait_backend(page, lambda t: t["scenario"] == "crossing" and t["mission"]["status"] in ("planning", "navigating"), timeout=60)
+    steps = page.locator("#judge-demo .js-step")
+    expect(steps).to_have_count(8)
+    # Steps are ticked only from telemetry / the backend event log, in order.
+    expect(page.locator("#judge-demo .js-done")).to_have_count(5, timeout=120000)
+    wait_backend(page, lambda t: t["mission"]["status"] in ("goal_reached", "stopped", "error"), timeout=180)
+    expect(page.locator("#judge-demo .js-done")).to_have_count(8, timeout=20000)
+    t = telemetry(page)
+    assert t["mission"]["status"] == "goal_reached" and t["safety"]["collisions"] == 0
+    expect(page.locator("#judge-demo")).to_contain_text("Goal reached")
+    # The comparison shows the recorded evaluation, not invented numbers.
+    recorded = backend(page, "get", "/evaluation").json()["comparison"]
+    evidence = page.locator("#evaluation")
+    expect(evidence).to_contain_text("Recorded evaluation")
+    expect(evidence.locator(".ev-stats")).to_contain_text(recorded["predictive"]["goal_completion"])
+    expect(evidence.locator(".ev-stats")).to_contain_text(recorded["reactive"]["goal_completion"])
     assert not page.errors, page.errors
