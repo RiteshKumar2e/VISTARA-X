@@ -1474,3 +1474,21 @@ details.scenario-info[open] > summary {
   flex-wrap: wrap;
   overflow: visible;
 }
+
+/* Alert centre: settings and history share one row, so the first alert does not shift the
+   workspace. A standing blocked/error banner still takes its own row on purpose. */
+.console > .alert-centre {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-1) var(--space-5);
+}
+.console > .alert-centre > .alert-banner {
+  flex-basis: 100%;
+}
+.console > .alert-centre > details {
+  min-width: 0;
+}
+.console > .alert-centre > details[open] {
+  flex-basis: 100%;
+}

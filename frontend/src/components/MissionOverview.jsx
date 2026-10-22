@@ -56,11 +56,10 @@ export function MissionOverview({ telemetry, backend, connection, command, onlin
             </span>
           )}
         </div>
-        {m?.reason && (
-          <span className="small ov-reason" title={m.reason}>
-            {m.reason}
-          </span>
-        )}
+        {/* Always rendered (empty when there is no reason) so the bar never changes height. */}
+        <span className="small ov-reason" title={m?.reason || undefined}>
+          {m?.reason || ' '}
+        </span>
       </div>
       <div className="cb-actions">
         <CommandButton
