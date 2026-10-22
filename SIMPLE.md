@@ -32,7 +32,7 @@
 | Goal pahuncha | 9/9 | 7/9 |
 | Takkar (collisions) | 0 | 2 |
 | Bahut paas se guzarna (near miss) | 0 | 3 |
-| Average time | 26.2 s | 24.9 s |
+| Average time | 26.4 s | 24.9 s |
 
 Predictive thoda dheema hai, lekin kabhi nahi takraaya. Ye nateeja ek simulated scenario ka hai; asli duniya ki safety ki guarantee nahi.
 

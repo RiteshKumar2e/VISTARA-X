@@ -1,6 +1,6 @@
 # VISTARA-X evaluation results
 
-Generated 2026-10-21T07:40:56+00:00 by `python -m app.evaluation` on Windows 10, AMD64 Family 23 Model 24 Stepping 1, AuthenticAMD (327.4 s). headless engine, simulated sensors, fixed seeds; obstacle ground truth used only for the metrics.
+Generated 2026-10-22T07:07:18+00:00 by `python -m app.evaluation` on Windows 10, AMD64 Family 23 Model 24 Stepping 1, AuthenticAMD (237.2 s). headless engine, simulated sensors, fixed seeds; obstacle ground truth used only for the metrics.
 
 ## Predictive avoidance vs reactive baseline
 
@@ -11,13 +11,13 @@ Scenario `crossing`, 9 runs per mode: crossing person at 0.6, 0.9, 1.2 m/s, star
 | Goal completion | 9/9 | 7/9 |
 | Collisions (total) | 0 | 2 |
 | Near misses (< 0.25 m, total) | 0 | 3 |
-| Closest approach to a moving obstacle, worst run (m) | 0.329 | -0.033 |
-| Closest approach, mean over runs (m) | 1.329 | 1.007 |
-| Task duration, mean (s) | 26.23 | 24.94 |
-| Path length, mean (m) | 17.54 | 17.43 |
-| Replans per run, mean | 3.11 | 2.56 |
+| Closest approach to a moving obstacle, worst run (m) | 0.598 | -0.033 |
+| Closest approach, mean over runs (m) | 1.359 | 1.007 |
+| Task duration, mean (s) | 26.44 | 24.94 |
+| Path length, mean (m) | 17.73 | 17.43 |
+| Replans per run, mean | 3 | 2.56 |
 | 1 s prediction error, mean (m) | 0.202 | 0.202 |
-| Simulation step time, mean / max (ms) | 30.67 / 753.47 | 31.73 / 1092.72 |
+| Simulation step time, mean / max (ms) | 26.07 / 989.7 | 17.77 / 668.12 |
 
 ### Individual runs
 
@@ -29,7 +29,7 @@ Scenario `crossing`, 9 runs per mode: crossing person at 0.6, 0.9, 1.2 m/s, star
 | predictive | 0.9 | 0 | goal_reached | 28.5 | 17.72 | 3 | 0 | 0 | 0.904 |
 | predictive | 0.9 | 4 | goal_reached | 26.0 | 17.24 | 3 | 0 | 0 | 1.254 |
 | predictive | 0.9 | 8 | goal_reached | 25.5 | 17.65 | 3 | 0 | 0 | 0.82 |
-| predictive | 1.2 | 0 | goal_reached | 27.6 | 17.55 | 2 | 0 | 0 | 0.329 |
+| predictive | 1.2 | 0 | goal_reached | 29.55 | 19.26 | 1 | 0 | 0 | 0.598 |
 | predictive | 1.2 | 4 | goal_reached | 26.55 | 17.73 | 4 | 0 | 0 | 1.487 |
 | predictive | 1.2 | 8 | goal_reached | 23.2 | 17.43 | 3 | 0 | 0 | 1.939 |
 | reactive | 0.6 | 0 | goal_reached | 27.85 | 17.64 | 5 | 0 | 0 | 0.55 |

@@ -248,24 +248,24 @@ Switch **Predictive avoidance** off in the Prediction panel, or send `POST /simu
 
 Run `python -m app.evaluation` from `backend/`. It takes about 3–5 minutes on a laptop CPU and writes [backend/evaluation/results.md](backend/evaluation/results.md) and `results.json`. The dashboard's *Evaluation* panel shows the latest results.
 
-Latest run: generated 2026-10-21 07:40:56+00:00 on the development laptop, in 327.4 s. The scenario is `crossing`, with 9 variants (the person walks at 0.6, 0.9 or 1.2 m/s and starts 0, 4 or 8 s early), each run once in each mode:
+Latest run: generated 2026-10-22 07:07:18+00:00 on the development laptop, in 237.2 s. The scenario is `crossing`, with 9 variants (the person walks at 0.6, 0.9 or 1.2 m/s and starts 0, 4 or 8 s early), each run once in each mode:
 
 | Metric | Predictive | Reactive baseline |
 |---|---|---|
 | Goal completion | 9/9 | 7/9 |
 | Collisions (total) | 0 | 2 |
 | Near misses (< 0.25 m) | 0 | 3 |
-| Closest approach to a moving obstacle, worst run | 0.329 m | -0.033 m |
-| Closest approach, mean | 1.329 m | 1.007 m |
-| Task duration, mean (completed runs) | 26.23 s | 24.94 s |
-| Path length, mean | 17.54 m | 17.43 m |
-| Replans per run, mean | 3.11 | 2.56 |
+| Closest approach to a moving obstacle, worst run | 0.598 m | -0.033 m |
+| Closest approach, mean | 1.359 m | 1.007 m |
+| Task duration, mean (completed runs) | 26.44 s | 24.94 s |
+| Path length, mean | 17.73 m | 17.43 m |
+| Replans per run, mean | 3 | 2.56 |
 | 1 s prediction error, mean | 0.202 m | 0.202 m |
 
 What the comparison shows:
 
 - **Collisions:** in 2 of the 9 runs, the reactive robot was struck by the person, who does not give way. The robot stopped for the obstacle in front of it, but a stop does not stop someone walking into it. The predictive robot slowed or waited before the person's line and kept its distance in all 9 runs.
-- **Cost:** about 1.3 s more per mission and slightly more replans.
+- **Cost:** about 1.5 s more per mission and slightly more replans.
 - **Prediction error:** the 1 s error is similar in both modes because the same tracker runs in both.
 - **Scope:** these results come from one simulated scenario family with scripted motion. They are not a statistical safety claim.
 
