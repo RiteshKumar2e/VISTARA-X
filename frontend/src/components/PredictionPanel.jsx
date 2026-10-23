@@ -164,6 +164,42 @@ function ConflictRadar({ telemetry, focus }) {
   );
 }
 
+/**
+ * OBSERVE -> TRACK -> PREDICT -> ASSESS -> DECIDE -> ACT, each stage lit only by live state:
+ * "on" when it is processing something, "alert" when it changed the robot's behaviour.
+ */
+function Pipeline({ telemetry }) {
+  const p = telemetry.prediction;
+  const m = telemetry.mission;
+  const navigating = m.status === 'navigating' || m.status === 'replanning';
+  const confirmed = p.tracks.filter((t) => t.state === 'confirmed');
+  const moving = confirmed.filter((t) => t.moving);
+  const acting = p.enabled && (p.action !== 'continue' || p.speed_factor < 1);
+  const stages = [
+    ['Observe', p.measurements > 0 ? 'on' : 'off', `${p.measurements} object${p.measurements === 1 ? '' : 's'} in scan`],
+    ['Track', confirmed.length ? 'on' : 'off', `${confirmed.length} confirmed`],
+    ['Predict', moving.length ? 'on' : 'off', moving.length ? `${moving.length} moving, 0.5-3 s` : 'nothing moving'],
+    ['Assess', p.risk !== 'LOW' ? 'alert' : navigating && moving.length ? 'on' : 'off', `risk ${p.risk}`],
+    ['Decide', acting ? 'alert' : navigating ? 'on' : 'off', p.enabled ? p.action.replace('_', ' ') : 'baseline: no action'],
+    [
+      'Act',
+      acting || m.status === 'replanning' || m.waiting ? 'alert' : navigating ? 'on' : 'off',
+      m.status === 'replanning' ? 'replanning' : m.waiting ? 'waiting' : navigating ? `${Math.round((p.speed_factor ?? 1) * 100)}% speed` : 'robot idle',
+    ],
+  ];
+  return (
+    <ol className="predict-pipeline" aria-label="Predictive navigation pipeline, live">
+      {stages.map(([name, state, detail]) => (
+        <li key={name} className={`pl-stage pl-${state}`}>
+          <span className="pl-name">{name}</span>
+          <span className="pl-detail mono">{detail}</span>
+          <span className="sr-only">{state === 'alert' ? '(changing behaviour)' : state === 'on' ? '(active)' : '(idle)'}</span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
 /** Predictive Intelligence: tracked objects, predictions, risk and the robot's response. */
 export function PredictionPanel({ telemetry, online, command }) {
   const p = telemetry?.prediction;
@@ -215,6 +251,8 @@ export function PredictionPanel({ telemetry, online, command }) {
           </label>
         </div>
       </div>
+
+      <Pipeline telemetry={telemetry} />
 
       <div className="intel-grid">
         <div className={`risk-card risk-${tone}`} role="status" aria-live="polite">

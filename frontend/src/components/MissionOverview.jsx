@@ -36,6 +36,9 @@ export function MissionOverview({ telemetry, backend, connection, command, onlin
         Mission overview
       </h2>
       <div className="cb-state">
+        <Term tip="Everything on this page runs in a simulation: the robot, people, obstacles and every sensor are simulated. No physical robot or hardware sensor is connected.">
+          <span className="sim-tag">Simulation</span>
+        </Term>
         {telemetry ? <MissionStatusBadge status={status} waiting={m.waiting} /> : <span className="badge badge-neutral">No telemetry</span>}
         <div className="cb-facts">
           <span className="cb-fact">

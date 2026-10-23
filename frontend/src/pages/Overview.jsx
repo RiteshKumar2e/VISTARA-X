@@ -91,12 +91,12 @@ export default function Overview() {
           <h1>VISTARA-X</h1>
           <p className="hero-tagline">Beyond Seeing. Into Understanding.</p>
           <p className="hero-claim">
-            A robot that <strong>anticipates</strong> navigation conflicts instead of only reacting to obstacles.
+            Predictive navigation for <strong>dynamic human environments</strong>.
           </p>
           <p className="lede">
-            VISTARA-X tracks moving people with simulated LiDAR, predicts where they will be over the next three seconds, checks those
-            predictions against its own route, and slows, waits, steps aside or replans before the paths meet, explaining every
-            decision.
+            An autonomous navigation prototype that tracks people with LiDAR, estimates where they will be over the next three seconds,
+            checks those predictions against its own route, and slows, waits, steps aside or replans <em>before</em> the paths meet,
+            explaining every decision. Simulation-first: the robot, people and sensors are simulated.
           </p>
           <div className="button-row">
             <Link className="btn btn-primary btn-lg" to="/mission">

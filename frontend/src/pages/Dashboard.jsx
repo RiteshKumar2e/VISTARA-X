@@ -22,7 +22,6 @@ import { SystemStatus } from '../components/SystemStatus';
 import { Tabs } from '../components/Tabs';
 import { TelemetryPanel } from '../components/TelemetryPanel';
 import { TelemetryStrip } from '../components/TelemetryStrip';
-import { Toaster } from '../components/Toaster';
 import { useBackendStatus } from '../hooks/useBackendStatus';
 import { useCommand } from '../hooks/useCommand';
 import { useEvaluation } from '../hooks/useEvaluation';
@@ -390,7 +389,6 @@ export default function Dashboard() {
         </div>
         <Tabs id="systems" label="Subsystems" value={systemTab} onChange={setSystemTab} className="systems-tabs" tabs={systems} />
       </div>
-      <Toaster telemetry={telemetry} />
     </div>
   );
 }

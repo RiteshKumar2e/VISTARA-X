@@ -160,13 +160,13 @@ def test_full_mission_via_ui(page, demo_speed):
     open_tab(page, "Sensors and planning")
     expect(page.locator("#navigation canvas.grid-canvas")).to_be_visible()
     # Dismiss the newest notification (older ones may be auto-dismissing after 8 s).
-    # New toasts keep arriving (the patrolling person causes replans), so the stack is
+    # New alerts keep arriving (the patrolling person causes replans), so the stack is
     # rarely "stable" for Playwright's click: dispatch the click on the button itself.
-    toast = page.locator(".toast").filter(has_text="Route replanned").last
-    expect(toast).to_be_visible()
-    text = toast.inner_text()
-    toast.get_by_role("button", name="Dismiss notification").dispatch_event("click")
-    expect(page.locator(".toast").filter(has_text=text.splitlines()[-1])).to_have_count(0)
+    alert = page.locator(".alert-float .alert-banner").filter(has_text="New route found").first
+    expect(alert).to_be_visible()
+    message = alert.locator("p").inner_text()
+    alert.get_by_role("button", name="Dismiss alert: New route found").dispatch_event("click")
+    expect(page.locator(".alert-float .alert-banner").filter(has_text=message)).to_have_count(0)
     page.screenshot(path=str(SHOTS / "mission-replanned.png"))
 
     expect(page.locator(".viewport [data-status]")).to_contain_text("Goal reached", timeout=90000)

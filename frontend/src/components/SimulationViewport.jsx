@@ -2,6 +2,7 @@ import { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { CrosshairIcon, ObstacleIcon, SpinnerIcon, DisconnectedIcon } from './Icons';
 import { PlanView2D } from './PlanView2D';
 import { api } from '../services/api';
+import { predictiveHeadline } from './PredictionPanel';
 import { ScenarioInfo } from './ScenarioInfo';
 import { MissionStatusBadge } from './StatusBadge';
 
@@ -88,6 +89,8 @@ export function SimulationViewport({
   const status = m?.status;
   const progress = m?.progress;
   const r = telemetry?.robot;
+  const pred = telemetry?.prediction;
+  const headline = predictiveHeadline(telemetry);
   const label = telemetry
     ? `Simulation of a ${world.width} by ${world.height} metre warehouse. Robot at x ${r.x.toFixed(1)}, y ${r.y.toFixed(
         1,
@@ -283,6 +286,21 @@ export function SimulationViewport({
                 &middot; err {(telemetry.mapping.pose_error_m * 100).toFixed(0)} cm &middot; plan: {telemetry.mapping.planner_map}
               </span>
             )}
+          </div>
+        )}
+        {telemetry && headline && headline[0] !== 'idle' && (
+          // Cause and effect inside the simulation view: the same derivation as the
+          // Prediction and risk panel (which carries the live region for screen readers).
+          <div className={`stage-decision sd-${headline[0]}`} aria-hidden="true">
+            <span className="sd-mark" />
+            <strong>{headline[1]}</strong>
+            <span>{headline[2]}</span>
+            {pred?.ttc != null && (
+              <span className="sd-ttc mono">
+                T{pred.track} &middot; conflict in {pred.ttc.toFixed(1)} s
+              </span>
+            )}
+            {pred && !pred.enabled && <span className="sd-ttc">reactive baseline</span>}
           </div>
         )}
         {!telemetry && (

@@ -259,7 +259,7 @@ Switch **Predictive avoidance** off in the Prediction panel, or send `POST /simu
 
 Run `python -m app.evaluation` from `backend/`. It takes about 3–5 minutes on a laptop CPU and writes [backend/evaluation/results.md](backend/evaluation/results.md) and `results.json`. The dashboard's *Evaluation* panel shows the latest results.
 
-Latest run: generated 2026-10-22 07:07:18+00:00 on the development laptop, in 237.2 s. The scenario is `crossing`, with 9 variants (the person walks at 0.6, 0.9 or 1.2 m/s and starts 0, 4 or 8 s early), each run once in each mode:
+Latest run: generated 2026-10-23 05:48:55+00:00 on the development laptop, in 195.4 s. It reproduced the previous run (2026-10-22) exactly: all 18 per-run results are identical, as expected with fixed seeds; only the measured step times differ. The scenario is `crossing`, with 9 variants (the person walks at 0.6, 0.9 or 1.2 m/s and starts 0, 4 or 8 s early), each run once in each mode:
 
 | Metric | Predictive | Reactive baseline |
 |---|---|---|

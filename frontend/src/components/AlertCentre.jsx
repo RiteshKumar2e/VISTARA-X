@@ -87,10 +87,14 @@ export function AlertCentre({ telemetry, settings }) {
     setAlerts((a) =>
       [
         ...fresh.reverse().map((e) => {
+          // The backend logs a temporary wait for moving obstacles as a "blocked" warning:
+          // that is a caution, not a failed mission.
           const [level, title] =
             e.type === 'explore' && e.level === 'success'
               ? ['success', 'Mapping finished']
-              : ALERTS[e.type];
+              : e.type === 'blocked' && e.level === 'warning'
+                ? ['warning', 'Waiting for a clear route']
+                : ALERTS[e.type];
           return { id: e.id, level, title, message: e.message, at: Date.now(), sim: e.sim_time };
         }),
         ...a,
@@ -112,11 +116,12 @@ export function AlertCentre({ telemetry, settings }) {
   const visible = alerts.filter((a) => !a.dismissed && (ttl === 0 || now - a.at < ttl)).slice(0, 2);
   const dismiss = (id) => setAlerts((a) => a.map((x) => (x.id === id ? { ...x, dismissed: true } : x)));
   const status = telemetry?.mission?.status;
-  // A temporary wait for moving obstacles is reported as "blocked" with waiting=true;
-  // it is not a failed mission, so it gets a warning, not a danger banner.
+  // A standing banner only for states that end or halt a mission. A temporary wait for moving
+  // obstacles (blocked + waiting) is shown by the prediction headline and the viewport instead,
+  // so the page does not jump every time the robot pauses for someone.
   const standing =
     status === 'blocked' && telemetry.mission.waiting
-      ? ['warning', 'Waiting for the route to clear', telemetry.mission.reason || 'A moving obstacle is in the way']
+      ? null
       : status === 'blocked'
       ? ['danger', 'Robot is blocked', telemetry.mission.reason || 'No collision-free route exists']
       : status === 'error'

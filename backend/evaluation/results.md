@@ -1,6 +1,6 @@
 # VISTARA-X evaluation results
 
-Generated 2026-10-22T07:07:18+00:00 by `python -m app.evaluation` on Windows 10, AMD64 Family 23 Model 24 Stepping 1, AuthenticAMD (237.2 s). headless engine, simulated sensors, fixed seeds; obstacle ground truth used only for the metrics.
+Generated 2026-10-23T05:48:55+00:00 by `python -m app.evaluation` on Windows 10, AMD64 Family 23 Model 24 Stepping 1, AuthenticAMD (195.4 s). headless engine, simulated sensors, fixed seeds; obstacle ground truth used only for the metrics.
 
 ## Predictive avoidance vs reactive baseline
 
@@ -17,7 +17,7 @@ Scenario `crossing`, 9 runs per mode: crossing person at 0.6, 0.9, 1.2 m/s, star
 | Path length, mean (m) | 17.73 | 17.43 |
 | Replans per run, mean | 3 | 2.56 |
 | 1 s prediction error, mean (m) | 0.202 | 0.202 |
-| Simulation step time, mean / max (ms) | 26.07 / 989.7 | 17.77 / 668.12 |
+| Simulation step time, mean / max (ms) | 19.73 / 496.8 | 14.71 / 256.56 |
 
 ### Individual runs
 
