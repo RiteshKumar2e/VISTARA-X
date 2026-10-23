@@ -91,6 +91,32 @@ function HorizonBar({ ttc }) {
   );
 }
 
+/** Clip a polyline (SVG coordinates) to the square [0, span] (Liang-Barsky per segment). */
+function clipPolyline(points, span) {
+  const out = [];
+  const clipSeg = ([x0, y0], [x1, y1]) => {
+    let t0 = 0;
+    let t1 = 1;
+    const dx = x1 - x0;
+    const dy = y1 - y0;
+    for (const [pp, q] of [[-dx, x0], [dx, span - x0], [-dy, y0], [dy, span - y0]]) {
+      if (pp === 0) {
+        if (q < 0) return null;
+      } else {
+        const r = q / pp;
+        if (pp < 0) t0 = Math.max(t0, r);
+        else t1 = Math.min(t1, r);
+      }
+    }
+    return t0 > t1 ? null : [[x0 + t0 * dx, y0 + t0 * dy], [x0 + t1 * dx, y0 + t1 * dy]];
+  };
+  for (let i = 1; i < points.length; i += 1) {
+    const seg = clipSeg(points[i - 1], points[i]);
+    if (seg) out.push(seg);
+  }
+  return out.map(([a, b]) => `M${a[0].toFixed(2)},${a[1].toFixed(2)}L${b[0].toFixed(2)},${b[1].toFixed(2)}`).join('');
+}
+
 /** Robot-centred top-down view of the route ahead, tracked objects and their predictions. */
 function ConflictRadar({ telemetry, focus }) {
   const r = telemetry.robot;
@@ -101,7 +127,9 @@ function ConflictRadar({ telemetry, focus }) {
   const sy = (y) => half - (y - r.y);
   const wp = telemetry.current_waypoint?.index ?? 0;
   const ahead = (telemetry.path || []).slice(Math.max(0, wp - 1));
-  const route = [[r.x, r.y], ...ahead].map(([x, y]) => `${sx(x).toFixed(2)},${sy(y).toFixed(2)}`).join(' ');
+  // Geometry is clipped to the window so nothing in the SVG extends past the radar.
+  const route = clipPolyline([[r.x, r.y], ...ahead].map(([x, y]) => [sx(x), sy(y)]), RADAR_SPAN);
+  const inside = (x, y, pad = 0) => x >= pad && x <= RADAR_SPAN - pad && y >= pad && y <= RADAR_SPAN - pad;
   const heading = r.theta ?? ((r.heading_deg ?? 0) * Math.PI) / 180;
   const tip = [Math.cos(heading) * 0.55, Math.sin(heading) * 0.55];
   const left = [Math.cos(heading + 2.5) * 0.35, Math.sin(heading + 2.5) * 0.35];
@@ -121,21 +149,18 @@ function ConflictRadar({ telemetry, focus }) {
         ))}
         <line x1={half} y1="0" x2={half} y2={RADAR_SPAN} className="rd-axis" />
         <line x1="0" y1={half} x2={RADAR_SPAN} y2={half} className="rd-axis" />
-        {ahead.length > 0 && <polyline points={route} className="rd-route" />}
-        {target && <circle cx={sx(target.x)} cy={sy(target.y)} r="0.22" className="rd-target" />}
-        {p.tracks.map((t) => {
+        {route && <path d={route} className="rd-route" />}
+        {target && inside(sx(target.x), sy(target.y), 0.3) && <circle cx={sx(target.x)} cy={sy(target.y)} r="0.22" className="rd-target" />}
+        {p.tracks.filter((t) => inside(sx(t.x), sy(t.y), 0.8)).map((t) => {
           const risk = (t.risk || 'LOW').toLowerCase();
           const isFocus = focus && t.id === focus.id;
           return (
             <g key={t.id} className={`rd-track rd-${risk}${t.state !== 'confirmed' ? ' rd-uncertain' : ''}${isFocus ? ' rd-focus' : ''}`}>
               {t.moving && t.predicted.length > 0 && (
-                <polyline
-                  className="rd-predline"
-                  points={[[t.x, t.y], ...t.predicted.map((q) => [q.x, q.y])].map(([x, y]) => `${sx(x).toFixed(2)},${sy(y).toFixed(2)}`).join(' ')}
-                />
+                <path className="rd-predline" d={clipPolyline([[t.x, t.y], ...t.predicted.map((q) => [q.x, q.y])].map(([x, y]) => [sx(x), sy(y)]), RADAR_SPAN)} />
               )}
               {t.moving &&
-                t.predicted.map((q) => (
+                t.predicted.filter((q) => inside(sx(q.x), sy(q.y), Math.max(q.sigma, 0.05) + (t.radius || 0.3))).map((q) => (
                   <g key={q.t}>
                     <circle cx={sx(q.x)} cy={sy(q.y)} r={Math.max(q.sigma, 0.05) + (t.radius || 0.3)} className="rd-sigma" />
                     <circle cx={sx(q.x)} cy={sy(q.y)} r="0.07" className="rd-pdot" />
@@ -148,7 +173,7 @@ function ConflictRadar({ telemetry, focus }) {
             </g>
           );
         })}
-        {p.conflicts.map((c, i) => (
+        {p.conflicts.filter((c) => inside(sx(c.x), sy(c.y), 0.3)).map((c, i) => (
           <g key={i} className="rd-conflict" transform={`translate(${sx(c.x)} ${sy(c.y)})`}>
             <line x1="-0.22" y1="-0.22" x2="0.22" y2="0.22" />
             <line x1="-0.22" y1="0.22" x2="0.22" y2="-0.22" />

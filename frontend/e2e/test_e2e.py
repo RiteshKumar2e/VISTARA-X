@@ -162,10 +162,11 @@ def test_full_mission_via_ui(page, demo_speed):
     # Dismiss the newest notification (older ones may be auto-dismissing after 8 s).
     # New alerts keep arriving (the patrolling person causes replans), so the stack is
     # rarely "stable" for Playwright's click: dispatch the click on the button itself.
-    alert = page.locator(".alert-float .alert-banner").filter(has_text="New route found").first
+    # Only the newest two alerts float, so dismiss whichever is showing.
+    alert = page.locator(".alert-float .alert-banner").first
     expect(alert).to_be_visible()
     message = alert.locator("p").inner_text()
-    alert.get_by_role("button", name="Dismiss alert: New route found").dispatch_event("click")
+    alert.get_by_role("button", name=re.compile("^Dismiss alert")).dispatch_event("click")
     expect(page.locator(".alert-float .alert-banner").filter(has_text=message)).to_have_count(0)
     page.screenshot(path=str(SHOTS / "mission-replanned.png"))
 
