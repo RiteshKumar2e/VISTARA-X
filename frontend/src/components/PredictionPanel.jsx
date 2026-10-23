@@ -220,7 +220,8 @@ export function PredictionPanel({ telemetry, online, command }) {
   const m = p.metrics;
   const disabled = !online || !!command.pending;
   const headline = predictiveHeadline(telemetry);
-  const focus = p.tracks.find((t) => t.id === p.track) || p.tracks.find((t) => t.moving && t.state === 'confirmed') || null;
+  const focus =
+    p.tracks.find((t) => t.id === p.track) || p.tracks.find((t) => t.moving && t.state === 'confirmed') || p.tracks[0] || null;
   const movingCount = p.tracks.filter((t) => t.moving).length;
   const speedPct = Math.round((p.speed_factor ?? 1) * 100);
 

@@ -486,10 +486,10 @@ No code edits are needed. Start both applications (Windows: `backend\start.bat` 
 
 The mission page (`/mission`) is one workspace, top to bottom:
 
-- **Command bar** (stays visible while scrolling): mission state, scenario, destination, progress, Start / Pause / Halt, **Judge demo**, Demo mode and system health.
-- **Simulation viewport** (3D digital twin or top-down plan) with the **telemetry strip** beneath it: link, state, position, heading, speed, route, obstacles, clearance and simulation time. Layers and the legend are in the viewport toolbar.
+- **Command bar**: a SIMULATION label, mission state, scenario, destination, progress, Start / Pause / Halt, **Judge demo**, Demo mode and system health.
+- **Simulation viewport** (3D digital twin or top-down plan). During a mission a decision overlay inside the view states what the robot is doing and why (for example *CONFLICT PREDICTED, reducing speed to 50%, T1 conflict in 2.8 s*). The **telemetry strip** sits beneath it: link, state, position, heading, speed, route, obstacles, clearance and simulation time. Layers and the legend are in the viewport toolbar.
 - **Command rail** beside the viewport: *Mission control* (start/stop/reset, target, scenario, parameters, typed or spoken commands with confirmation) and *Judge demo*.
-- **Prediction and risk** (predictive intelligence): the current decision as a headline (for example *CONFLICT PREDICTED, reducing speed to 50%*), the LOW/MEDIUM/HIGH risk level, commanded speed, the reason, time to conflict on a 0-3 s horizon, the predicted positions of the most relevant track, and a robot-centred conflict radar. Next to it, the **Decision timeline** lists the plan, prediction and response events from the backend.
+- **Prediction and risk** (predictive intelligence): a live OBSERVE → TRACK → PREDICT → ASSESS → DECIDE → ACT strip (each stage lit only by real state: objects in the scan, confirmed tracks, moving tracks, risk level, chosen action, commanded speed), the current decision as a headline (for example *CONFLICT PREDICTED, reducing speed to 50%*), the LOW/MEDIUM/HIGH risk level, commanded speed, the reason, time to conflict on a 0-3 s horizon, the predicted positions of the most relevant track, and a robot-centred conflict radar. Next to it, the **Decision timeline** lists the plan, prediction and response events from the backend.
 - **Evaluation: predictive vs reactive**: the recorded results of `python -m app.evaluation`, with provenance, side-by-side metrics and the closest approach of every run.
 - **Systems and tools** tabs: scripted demos, deliveries, mapping, perception and models, sensors and planning, the trap-the-robot challenge, diagnostics and the full event log.
 
