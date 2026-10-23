@@ -1,0 +1,607 @@
+{
+  "version": 1,
+  "author": "VISTARA-X (Hack01)",
+  "editor": "wokwi",
+  "parts": [
+    {
+      "type": "wokwi-arduino-mega",
+      "id": "mega",
+      "top": 0,
+      "left": 0,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-text",
+      "id": "title",
+      "top": -330,
+      "left": -40,
+      "attrs": {
+        "text": "VISTARA-X controller  \u00b7  robot front \u2192"
+      }
+    },
+    {
+      "type": "wokwi-hc-sr04",
+      "id": "us_front",
+      "top": 40,
+      "left": 520,
+      "attrs": {
+        "distance": "200"
+      },
+      "rotate": 90
+    },
+    {
+      "type": "wokwi-text",
+      "id": "us_front_lbl",
+      "top": 10,
+      "left": 530,
+      "attrs": {
+        "text": "FRONT 0\u00b0"
+      }
+    },
+    {
+      "type": "wokwi-hc-sr04",
+      "id": "us_fl",
+      "top": -250,
+      "left": 430,
+      "attrs": {
+        "distance": "200"
+      }
+    },
+    {
+      "type": "wokwi-text",
+      "id": "us_fl_lbl",
+      "top": -276,
+      "left": 440,
+      "attrs": {
+        "text": "FRONT-LEFT +40\u00b0"
+      }
+    },
+    {
+      "type": "wokwi-hc-sr04",
+      "id": "us_fr",
+      "top": 280,
+      "left": 430,
+      "attrs": {
+        "distance": "200"
+      },
+      "rotate": 180
+    },
+    {
+      "type": "wokwi-text",
+      "id": "us_fr_lbl",
+      "top": 390,
+      "left": 440,
+      "attrs": {
+        "text": "FRONT-RIGHT -40\u00b0"
+      }
+    },
+    {
+      "type": "wokwi-hc-sr04",
+      "id": "us_left",
+      "top": -250,
+      "left": 150,
+      "attrs": {
+        "distance": "200"
+      }
+    },
+    {
+      "type": "wokwi-text",
+      "id": "us_left_lbl",
+      "top": -276,
+      "left": 160,
+      "attrs": {
+        "text": "LEFT +90\u00b0"
+      }
+    },
+    {
+      "type": "wokwi-hc-sr04",
+      "id": "us_right",
+      "top": 280,
+      "left": 150,
+      "attrs": {
+        "distance": "200"
+      },
+      "rotate": 180
+    },
+    {
+      "type": "wokwi-text",
+      "id": "us_right_lbl",
+      "top": 390,
+      "left": 160,
+      "attrs": {
+        "text": "RIGHT -90\u00b0"
+      }
+    },
+    {
+      "type": "wokwi-hc-sr04",
+      "id": "us_rear",
+      "top": 40,
+      "left": -330,
+      "attrs": {
+        "distance": "200"
+      },
+      "rotate": 270
+    },
+    {
+      "type": "wokwi-text",
+      "id": "us_rear_lbl",
+      "top": 10,
+      "left": -320,
+      "attrs": {
+        "text": "REAR 180\u00b0"
+      }
+    },
+    {
+      "type": "wokwi-text",
+      "id": "motor_lbl",
+      "top": -250,
+      "left": -300,
+      "attrs": {
+        "text": "Motor driver inputs (brightness = speed)"
+      }
+    },
+    {
+      "type": "wokwi-led",
+      "id": "led_status",
+      "top": -215,
+      "left": -300,
+      "attrs": {
+        "color": "blue",
+        "label": "Status D13"
+      }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "r_led_status",
+      "top": -110,
+      "left": -328,
+      "rotate": 90,
+      "attrs": {
+        "value": "220"
+      }
+    },
+    {
+      "type": "wokwi-led",
+      "id": "led_rr",
+      "top": -215,
+      "left": -240,
+      "attrs": {
+        "color": "red",
+        "label": "R REV D8"
+      }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "r_led_rr",
+      "top": -110,
+      "left": -268,
+      "rotate": 90,
+      "attrs": {
+        "value": "220"
+      }
+    },
+    {
+      "type": "wokwi-led",
+      "id": "led_rf",
+      "top": -215,
+      "left": -180,
+      "attrs": {
+        "color": "green",
+        "label": "R FWD D7"
+      }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "r_led_rf",
+      "top": -110,
+      "left": -208,
+      "rotate": 90,
+      "attrs": {
+        "value": "220"
+      }
+    },
+    {
+      "type": "wokwi-led",
+      "id": "led_lr",
+      "top": -215,
+      "left": -120,
+      "attrs": {
+        "color": "red",
+        "label": "L REV D6"
+      }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "r_led_lr",
+      "top": -110,
+      "left": -148,
+      "rotate": 90,
+      "attrs": {
+        "value": "220"
+      }
+    },
+    {
+      "type": "wokwi-led",
+      "id": "led_lf",
+      "top": -215,
+      "left": -60,
+      "attrs": {
+        "color": "green",
+        "label": "L FWD D5"
+      }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "r_led_lf",
+      "top": -110,
+      "left": -88,
+      "rotate": 90,
+      "attrs": {
+        "value": "220"
+      }
+    },
+    {
+      "type": "wokwi-mpu6050",
+      "id": "imu",
+      "top": -150,
+      "left": 290,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-text",
+      "id": "imu_lbl",
+      "top": -175,
+      "left": 285,
+      "attrs": {
+        "text": "IMU (D20/D21)"
+      }
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "estop",
+      "top": 330,
+      "left": -300,
+      "attrs": {
+        "color": "red",
+        "label": "E-STOP (D26)"
+      }
+    },
+    {
+      "type": "wokwi-buzzer",
+      "id": "buzzer",
+      "top": 310,
+      "left": -160,
+      "attrs": {
+        "volume": "0.2"
+      }
+    },
+    {
+      "type": "wokwi-text",
+      "id": "buzzer_lbl",
+      "top": 290,
+      "left": -170,
+      "attrs": {
+        "text": "Buzzer (D28)"
+      }
+    },
+    {
+      "type": "wokwi-potentiometer",
+      "id": "battery",
+      "top": 320,
+      "left": -20,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-text",
+      "id": "battery_lbl",
+      "top": 290,
+      "left": -50,
+      "attrs": {
+        "text": "Battery (A0, left = full)"
+      }
+    }
+  ],
+  "connections": [
+    [
+      "us_front:TRIG",
+      "mega:30",
+      "blue",
+      []
+    ],
+    [
+      "us_front:ECHO",
+      "mega:31",
+      "green",
+      []
+    ],
+    [
+      "us_fl:TRIG",
+      "mega:32",
+      "blue",
+      []
+    ],
+    [
+      "us_fl:ECHO",
+      "mega:33",
+      "green",
+      []
+    ],
+    [
+      "us_fr:TRIG",
+      "mega:34",
+      "blue",
+      []
+    ],
+    [
+      "us_fr:ECHO",
+      "mega:35",
+      "green",
+      []
+    ],
+    [
+      "us_left:TRIG",
+      "mega:36",
+      "blue",
+      []
+    ],
+    [
+      "us_left:ECHO",
+      "mega:37",
+      "green",
+      []
+    ],
+    [
+      "us_right:TRIG",
+      "mega:38",
+      "blue",
+      []
+    ],
+    [
+      "us_right:ECHO",
+      "mega:39",
+      "green",
+      []
+    ],
+    [
+      "us_rear:TRIG",
+      "mega:40",
+      "blue",
+      []
+    ],
+    [
+      "us_rear:ECHO",
+      "mega:41",
+      "green",
+      []
+    ],
+    [
+      "us_left:VCC",
+      "mega:5V",
+      "red",
+      []
+    ],
+    [
+      "us_left:GND",
+      "mega:GND.2",
+      "black",
+      []
+    ],
+    [
+      "us_left:VCC",
+      "us_fl:VCC",
+      "red",
+      []
+    ],
+    [
+      "us_left:GND",
+      "us_fl:GND",
+      "black",
+      []
+    ],
+    [
+      "us_fl:VCC",
+      "us_front:VCC",
+      "red",
+      []
+    ],
+    [
+      "us_fl:GND",
+      "us_front:GND",
+      "black",
+      []
+    ],
+    [
+      "us_front:VCC",
+      "us_fr:VCC",
+      "red",
+      []
+    ],
+    [
+      "us_front:GND",
+      "us_fr:GND",
+      "black",
+      []
+    ],
+    [
+      "us_fr:VCC",
+      "us_right:VCC",
+      "red",
+      []
+    ],
+    [
+      "us_fr:GND",
+      "us_right:GND",
+      "black",
+      []
+    ],
+    [
+      "us_rear:VCC",
+      "mega:5V",
+      "red",
+      []
+    ],
+    [
+      "us_rear:GND",
+      "mega:GND.2",
+      "black",
+      []
+    ],
+    [
+      "mega:13",
+      "r_led_status:2",
+      "orange",
+      []
+    ],
+    [
+      "r_led_status:1",
+      "led_status:A",
+      "orange",
+      []
+    ],
+    [
+      "led_status:C",
+      "mega:GND.1",
+      "black",
+      []
+    ],
+    [
+      "mega:8",
+      "r_led_rr:2",
+      "orange",
+      []
+    ],
+    [
+      "r_led_rr:1",
+      "led_rr:A",
+      "orange",
+      []
+    ],
+    [
+      "led_rr:C",
+      "led_status:C",
+      "black",
+      []
+    ],
+    [
+      "mega:7",
+      "r_led_rf:2",
+      "orange",
+      []
+    ],
+    [
+      "r_led_rf:1",
+      "led_rf:A",
+      "orange",
+      []
+    ],
+    [
+      "led_rf:C",
+      "led_rr:C",
+      "black",
+      []
+    ],
+    [
+      "mega:6",
+      "r_led_lr:2",
+      "orange",
+      []
+    ],
+    [
+      "r_led_lr:1",
+      "led_lr:A",
+      "orange",
+      []
+    ],
+    [
+      "led_lr:C",
+      "led_rf:C",
+      "black",
+      []
+    ],
+    [
+      "mega:5",
+      "r_led_lf:2",
+      "orange",
+      []
+    ],
+    [
+      "r_led_lf:1",
+      "led_lf:A",
+      "orange",
+      []
+    ],
+    [
+      "led_lf:C",
+      "led_lr:C",
+      "black",
+      []
+    ],
+    [
+      "imu:VCC",
+      "mega:5V",
+      "red",
+      []
+    ],
+    [
+      "imu:GND",
+      "mega:GND.1",
+      "black",
+      []
+    ],
+    [
+      "imu:SDA",
+      "mega:20",
+      "purple",
+      []
+    ],
+    [
+      "imu:SCL",
+      "mega:21",
+      "purple",
+      []
+    ],
+    [
+      "estop:1.l",
+      "mega:26",
+      "red",
+      []
+    ],
+    [
+      "estop:2.l",
+      "mega:GND.3",
+      "black",
+      []
+    ],
+    [
+      "buzzer:2",
+      "mega:28",
+      "orange",
+      []
+    ],
+    [
+      "buzzer:1",
+      "mega:GND.3",
+      "black",
+      []
+    ],
+    [
+      "battery:VCC",
+      "mega:5V",
+      "red",
+      []
+    ],
+    [
+      "battery:GND",
+      "mega:GND.3",
+      "black",
+      []
+    ],
+    [
+      "battery:SIG",
+      "mega:A0",
+      "yellow",
+      []
+    ]
+  ],
+  "dependencies": {}
+}

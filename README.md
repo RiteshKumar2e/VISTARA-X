@@ -28,6 +28,7 @@ VISTARA-X is a simulation-first **predictive** autonomous navigation system. It 
 - [Deployment and security](#deployment-and-security)
 - [Troubleshooting](#troubleshooting)
 - [Judge demonstration guide](#judge-demonstration-guide)
+- [Hardware design and simulation](#hardware-design-and-simulation)
 - [Capability status](#capability-status)
 - [Limitations and roadmap](#limitations-and-roadmap)
 
@@ -100,6 +101,7 @@ A single simulation thread owns the robot, so concurrent controllers cannot conf
 VISTARA-X/
 ├── backend/            FastAPI service, simulation, perception, navigation, control, tests
 ├── frontend/           React application, dashboard, content pages, E2E tests
+├── hardware/           Hardware design: components, circuit, Arduino firmware, Wokwi simulation
 └── README.md
 ```
 
@@ -519,6 +521,15 @@ The older scripted demos (warehouse replanning, predictive crossing, blocked rou
 ### Mission states
 
 `idle` → `planning` → `navigating` ⇄ `replanning` → `goal_reached`, with `paused`, `stopped` (operator), `blocked` (no valid route; with moving obstacles the robot first waits up to 8 s) and `error` (internal fault, robot halted). Every new route is re-validated cell by cell against the occupancy grid before the robot moves.
+
+## Hardware design and simulation
+
+No physical robot has been built yet. [hardware/README.md](hardware/README.md) documents the Arduino-based robot this software is designed for:
+
+- **Components and specifications:** Arduino Mega 2560 controller, RPLIDAR A1M8, USB webcam, 6 × HC-SR04 ultrasonic ring, MPU6050 IMU, 2 × 12 V encoder gearmotors, Cytron MDD3A driver, 3S Li-ion pack, hardware E-stop. The backend runs on a laptop carried by the robot (≈ ₹21,000 plus the laptop).
+- **Circuit diagrams, pin map and power budget.**
+- **A working electronics simulation in Wokwi:** Arduino firmware ([hardware/firmware/vistara_mega/](hardware/firmware/vistara_mega/)) that turns velocity commands into wheel speeds and enforces the safety rules on its own: command watchdog, ultrasonic slow/stop at the same 0.9/0.3 m as the backend, latched E-stop, battery cut-off. Fourteen test cases are listed.
+- **Physical implementation plan, simulation limitations, and a phased build plan.**
 
 ## Capability status
 
