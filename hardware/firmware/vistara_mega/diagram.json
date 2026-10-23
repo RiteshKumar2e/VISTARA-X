@@ -32,8 +32,8 @@
     {
       "type": "wokwi-text",
       "id": "us_front_lbl",
-      "top": 10,
-      "left": 530,
+      "top": 195,
+      "left": 560,
       "attrs": {
         "text": "FRONT 0\u00b0"
       }
@@ -125,8 +125,8 @@
     {
       "type": "wokwi-text",
       "id": "us_rear_lbl",
-      "top": 10,
-      "left": -320,
+      "top": 195,
+      "left": -300,
       "attrs": {
         "text": "REAR 180\u00b0"
       }
