@@ -255,7 +255,7 @@ The robot has two power sources: the laptop's own battery, and the robot battery
 1. Open [wokwi.com](https://wokwi.com) and choose **New project → Arduino Mega**.
 2. Replace the contents of `sketch.ino` with [firmware/vistara_mega/vistara_mega.ino](firmware/vistara_mega/vistara_mega.ino).
 3. Open the `diagram.json` tab and replace its contents with [firmware/vistara_mega/diagram.json](firmware/vistara_mega/diagram.json). The circuit appears: Arduino Mega, 6 HC-SR04 sensors, MPU6050, E-stop button, buzzer, battery potentiometer, four LEDs for the motor driver inputs, and a status LED.
-4. Press **Start simulation** (green ▶). The serial monitor prints a boot line and then one JSON line every 100 ms. Type `T` to pause this stream: the readable `{"event":"state",…}` lines (what the robot is doing and why) keep coming.
+4. Press **Start simulation** (green ▶). An **automatic tour** starts by itself (`#define AUTO_TOUR 1`): in 12 steps (about 46 s, then it repeats) the robot drives, slows and stops for a person walking towards it, turns in place, guards reverse, stops when the laptop's commands stop, reacts to a low and an empty battery, and handles an E-stop and its reset. Each step is explained in plain words in the serial monitor, with a status line twice a second. Type `S` to stop the tour and run the tests below by hand, or `A` to restart it. Step-by-step guide: [WOKWI_TEST_GUIDE.md](WOKWI_TEST_GUIDE.md).
 
 In the layout, the robot's front points to the right of the screen, and each ultrasonic sensor sits on the side it faces on the robot.
 
@@ -265,7 +265,7 @@ No libraries are needed: the MPU6050 is read through its registers with `Wire`.
 
 ### 5.2 What to test
 
-Type commands into the serial monitor (press Enter after each).
+Stop the automatic tour with `S` first (or set `#define AUTO_TOUR 0`), then type commands into the serial monitor (press Enter after each). With `AUTO_TOUR 0` the JSON telemetry stream is on from boot.
 
 | # | Test | Steps | Expected result |
 |---|---|---|---|

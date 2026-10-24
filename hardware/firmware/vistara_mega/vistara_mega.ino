@@ -20,6 +20,13 @@
 // encoder, so the motor outputs drive LEDs (brightness = PWM duty) and the wheel
 // speed/encoder ticks come from a first-order motor model. The battery is a
 // potentiometer. Set WOKWI_SIM to 0 for the real robot.
+//
+// AUTO_TOUR = 1 (Wokwi only) plays a 46 s script on its own that shows every
+// safety rule: it sends the commands the laptop would send, walks a virtual
+// person towards the robot, puts something behind it, drains the battery and
+// presses the E-stop. Each step is explained in plain words in the serial
+// monitor. The real sensors, knob and button still work during the tour.
+// Typing V, S, D, R or L stops the tour; A starts it again.
 
 #include <Arduino.h>
 #include <Wire.h>
@@ -27,6 +34,7 @@
 #include <string.h>
 
 #define WOKWI_SIM 1
+#define AUTO_TOUR 1
 
 // ---------------------------------------------------------------- pins
 // Motor driver (Cytron MDD3A, or L298N with ENA/ENB jumpers fitted):
@@ -91,7 +99,15 @@ float cmdV = 0, cmdW = 0;                 // last command from the host
 unsigned long lastCmdMs = 0;
 bool demoMode = false;
 bool estopLatched = false;
-bool telemetryOn = true;                  // "T" toggles the 10 Hz JSON stream
+bool tourOn = AUTO_TOUR && WOKWI_SIM;     // "A" toggles the automatic tour
+uint8_t tourStep = 0;
+unsigned long tourStepMs = 0;             // 0 = tour not started yet
+float tourRange[US_COUNT] = {US_MAX_RANGE, US_MAX_RANGE, US_MAX_RANGE, US_MAX_RANGE, US_MAX_RANGE, US_MAX_RANGE};
+float tourBattery = 0;                    // virtual battery voltage, 0 = read the knob
+bool tourEstop = false;                   // virtual E-stop press
+const uint8_t TOUR_STEPS = 12;
+const unsigned int TOUR_MS[TOUR_STEPS] = {3000, 4000, 7000, 3000, 3000, 4000, 4000, 4000, 3000, 4000, 4000, 3000};
+bool telemetryOn = !tourOn;               // "T" toggles the 10 Hz JSON stream
 SafetyState lastReported = WAIT_CMD;      // for the readable state-change lines
 Stream *host = &Serial;                   // telemetry goes where the last command came from
 
@@ -126,6 +142,7 @@ void pingNextSonar() {
   digitalWrite(US_TRIG[i], LOW);
   unsigned long width = pulseIn(US_ECHO[i], HIGH, US_TIMEOUT_US);
   float r = width ? width * 0.000343f / 2.0f : US_MAX_RANGE;  // no echo in time = nothing within range
+  r = min(r, tourRange[i]);  // the tour's virtual obstacle, if it is closer
   usRange[i] = constrain(r, 0.02f, US_MAX_RANGE);
 }
 
@@ -178,7 +195,7 @@ void updateBattery() {
   float v = analogRead(PIN_BATTERY) * 5.0f / 1023.0f;
 #if WOKWI_SIM
   // Potentiometer as state of charge: fully left = full (12.6 V), right = empty (9.0 V).
-  float measured = 12.6f - v / 5.0f * 3.6f;
+  float measured = tourBattery > 0 ? tourBattery : 12.6f - v / 5.0f * 3.6f;
 #else
   float measured = v * BAT_DIVIDER;
 #endif
@@ -206,7 +223,7 @@ void applySafety() {
   float v = cmdV, w = cmdW;
   bool fresh = demoMode || (lastCmdMs && millis() - lastCmdMs <= CMD_TIMEOUT_MS);
 
-  if (digitalRead(PIN_ESTOP) == LOW) estopLatched = true;
+  if (digitalRead(PIN_ESTOP) == LOW || tourEstop) estopLatched = true;
 
   if (estopLatched) {
     state = ESTOP; v = w = 0;
@@ -287,6 +304,148 @@ void updateWheels(float dt) {
 #endif
 }
 
+// ---------------------------------------------------------------- automatic tour (Wokwi)
+// Called at the start of each step: clear the virtual inputs, then set the ones
+// this step needs from its first moment.
+void tourEnter(uint8_t step) {
+  for (uint8_t i = 0; i < US_COUNT; i++) tourRange[i] = US_MAX_RANGE;
+  tourBattery = 0;
+  tourEstop = false;
+  if (step == 0) { cmdV = cmdW = 0; lastCmdMs = 0; }
+  if (step == 3) tourRange[US_FRONT] = 0.2;   // the person is still standing there
+  if (step == 7) tourBattery = 10.2;
+  if (step == 8) tourBattery = 9.6;
+  if (step == 10) estopLatched = false;       // same as releasing the button and sending "R"
+}
+
+void tourAnnounce(Stream &o, uint8_t step) {
+  o.println();
+  o.println(F("=============================================================="));
+  o.print(F("STEP ")); o.print(step + 1); o.print('/'); o.print(TOUR_STEPS); o.print(F("  "));
+  switch (step) {
+    case 0:
+      o.println(F("Power on: the robot waits for the laptop"));
+      o.println(F("  No speed command has arrived yet, so the motors stay off."));
+      o.println(F("  Watch: blue LED blinks slowly, all motor LEDs off."));
+      break;
+    case 1:
+      o.println(F("The laptop says: drive forward at 0.5 m/s"));
+      o.println(F("  Both wheels turn forward. Speed rises gently (0.5 m/s^2 limit)."));
+      o.println(F("  Watch: L FWD and R FWD (green) get brighter, blue LED solid."));
+      break;
+    case 2:
+      o.println(F("A person walks towards the front of the robot"));
+      o.println(F("  The front sensor distance drops from 2.0 m. Below 0.9 m the"));
+      o.println(F("  robot slows down, at 0.3 m it stops, even though the laptop"));
+      o.println(F("  still says 'drive'."));
+      o.println(F("  Watch: green LEDs dim, then go off; buzzer beeps."));
+      break;
+    case 3:
+      o.println(F("The person is still there: the robot turns in place"));
+      o.println(F("  Driving forward is blocked, but turning on the spot is allowed,"));
+      o.println(F("  so the laptop can look for another way."));
+      o.println(F("  Watch: L REV (red) and R FWD (green) light together."));
+      break;
+    case 4:
+      o.println(F("The path is clear again: drive forward"));
+      o.println(F("  Watch: both green LEDs light again."));
+      break;
+    case 5:
+      o.println(F("Reversing, then something appears behind the robot"));
+      o.println(F("  The rear sensor guards reverse motion: at 0.3 m it stops."));
+      o.println(F("  Watch: L REV and R REV (red) light, then go off."));
+      break;
+    case 6:
+      o.println(F("The laptop freezes: commands stop arriving"));
+      o.println(F("  The laptop normally sends a command every 50 ms. After 0.5 s"));
+      o.println(F("  without one, the Arduino stops the robot by itself (watchdog)."));
+      o.println(F("  Watch: green LEDs go off about 1.5 s into this step."));
+      break;
+    case 7:
+      o.println(F("The battery is getting low (10.2 V)"));
+      o.println(F("  Below 10.5 V the robot drives at half speed to get home safely."));
+      o.println(F("  Watch: green LEDs at about half brightness."));
+      break;
+    case 8:
+      o.println(F("The battery is empty (9.6 V)"));
+      o.println(F("  Below 9.9 V the motors switch off to protect the battery."));
+      o.println(F("  Watch: motor LEDs off, buzzer beeps."));
+      break;
+    case 9:
+      o.println(F("Someone presses the EMERGENCY STOP"));
+      o.println(F("  Motors cut instantly, no slow ramp-down. The stop is latched:"));
+      o.println(F("  the robot will not move again on its own."));
+      o.println(F("  Watch: all motor LEDs off at once, fast beeping."));
+      break;
+    case 10:
+      o.println(F("E-stop released and reset (the 'R' command)"));
+      o.println(F("  Only after a deliberate reset does the robot drive again."));
+      o.println(F("  Watch: green LEDs light again."));
+      break;
+    case 11:
+      o.println(F("Tour finished: the laptop sends stop"));
+      o.println(F("  The tour starts again in 3 s. Type S to stop it and try the"));
+      o.println(F("  commands yourself, A to start it again."));
+      break;
+  }
+  o.println(F("=============================================================="));
+}
+
+// Plays the current step: moves the virtual obstacles and sends the command the
+// laptop would send, 50 times a second.
+void tourUpdate(unsigned long now) {
+  if (!tourOn) return;
+  if (tourStepMs == 0 || now - tourStepMs >= TOUR_MS[tourStep]) {
+    if (tourStepMs) tourStep = (tourStep + 1) % TOUR_STEPS;
+    tourStepMs = now;
+    tourEnter(tourStep);
+    tourAnnounce(*host, tourStep);
+  }
+  float t = (now - tourStepMs) / 1000.0f;
+  float v = 0, w = 0;
+  bool send = true;
+  switch (tourStep) {
+    case 0: send = false; break;
+    case 2: v = 0.5; tourRange[US_FRONT] = max(0.2f, 2.0f - 0.3f * t); break;  // person walks in at 0.3 m/s
+    case 3: w = 1.0; break;
+    case 5: v = -0.2; tourRange[US_REAR] = t < 1.5f ? US_MAX_RANGE : 0.2f; break;
+    case 6: v = 0.5; send = t < 1.0f; break;
+    case 9: v = 0.5; tourEstop = t >= 1.5f; break;
+    case 11: break;
+    default: v = 0.5; break;  // steps 1, 4, 7, 8, 10
+  }
+  if (send) { cmdV = v; cmdW = w; lastCmdMs = now; }
+}
+
+void stopTour(Stream &o) {
+  tourOn = false;
+  tourEnter(0);
+  o.println(F("Tour stopped. You are in control now (type ? for the commands, A to restart the tour)."));
+}
+
+void printMotor(Stream &o, int pwm) {
+  if (pwm == 0) { o.print(F("off    ")); return; }
+  o.print(pwm > 0 ? F("FWD ") : F("REV "));
+  int pct = abs(pwm) * 100 / 255;
+  if (pct < 10) o.print(' ');
+  if (pct < 100) o.print(' ');
+  o.print(pct); o.print('%');
+}
+
+// Readable status line, twice a second during the tour
+void tourStatus(Stream &o, unsigned long now) {
+  o.print(F("  t=")); o.print((now - tourStepMs) / 1000.0f, 1); o.print(F("s  "));
+  o.print(STATE_NAME[state]);
+  for (uint8_t n = strlen(STATE_NAME[state]); n < 17; n++) o.print(' ');
+  o.print(F("speed ")); o.print(outV, 2);
+  o.print(F(" m/s | front ")); o.print(usRange[US_FRONT], 2);
+  o.print(F(" m | rear ")); o.print(usRange[US_REAR], 2);
+  o.print(F(" m | battery ")); o.print(batteryV, 1);
+  o.print(F(" V | left motor ")); printMotor(o, wheelPwm[0]);
+  o.print(F(" | right motor ")); printMotor(o, wheelPwm[1]);
+  o.println();
+}
+
 // ---------------------------------------------------------------- serial commands
 // V <v> <w>       body velocity (m/s, rad/s); must repeat at least every 500 ms
 // S               stop now
@@ -294,22 +453,16 @@ void updateWheels(float dt) {
 // L <slow> <stop> ultrasonic slow/stop distances (m)
 // D               demo mode on/off: drive at 0.5 m/s without a host (Wokwi test)
 // T               JSON telemetry on/off (state changes are always printed)
+// A               automatic tour on/off (Wokwi only)
 // ?               print help
 void printHelp(Stream &o) {
-  o.println(F("{\"help\":\"V <v> <w> | S | R | L <slow> <stop> | D | T | ?\"}"));
+  o.println(F("{\"help\":\"V <v> <w> | S | R | L <slow> <stop> | D | T | A | ?\"}"));
 }
 
-// One readable line whenever the safety state changes, e.g.
-// {"event":"state","state":"OBSTACLE_STOP","why":"obstacle 0.20 m ahead"}
-void reportStateChange() {
-  if (state == lastReported) return;
-  lastReported = state;
-  Stream &o = *host;
-  o.print(F("{\"event\":\"state\",\"state\":\"")); o.print(STATE_NAME[state]);
-  o.print(F("\",\"why\":\""));
+void printWhy(Stream &o) {
   switch (state) {
     case WAIT_CMD:         o.print(F("waiting for a command")); break;
-    case OK:               o.print(F("driving")); break;
+    case OK:               o.print(cmdV || cmdW ? F("driving") : F("stopped, the command is zero")); break;
     case OBSTACLE_SLOW:    o.print(F("obstacle ")); o.print(usRange[US_FRONT], 2); o.print(F(" m ahead, slowing")); break;
     case OBSTACLE_STOP:    o.print(F("obstacle within ")); o.print(stopDistance, 2); o.print(F(" m ahead, stopped")); break;
     case REAR_STOP:        o.print(F("obstacle behind, reverse blocked")); break;
@@ -318,6 +471,21 @@ void reportStateChange() {
     case BATTERY_CRITICAL: o.print(F("battery ")); o.print(batteryV, 1); o.print(F(" V, motors off")); break;
     case ESTOP:            o.print(F("emergency stop pressed, send R after release")); break;
   }
+}
+
+// One readable line whenever the safety state changes, e.g.
+// {"event":"state","state":"OBSTACLE_STOP","why":"obstacle within 0.30 m ahead, stopped"}
+// or, during the tour:  >> OBSTACLE_STOP: obstacle within 0.30 m ahead, stopped
+void reportStateChange() {
+  if (state == lastReported) return;
+  lastReported = state;
+  Stream &o = *host;
+  if (tourOn) {
+    o.print(F("  >> ")); o.print(STATE_NAME[state]); o.print(F(": ")); printWhy(o); o.println();
+    return;
+  }
+  o.print(F("{\"event\":\"state\",\"state\":\"")); o.print(STATE_NAME[state]);
+  o.print(F("\",\"why\":\"")); printWhy(o);
   o.println(F("\"}"));
 }
 
@@ -334,7 +502,21 @@ bool twoNumbers(char *s, float &a, float &b) {
 void handleLine(char *s, Stream &port) {
   float a, b;
   host = &port;
+  char c = toupper(s[0]);
+  if (tourOn && strchr("VSDRL", c)) stopTour(port);  // a manual command takes over
   switch (s[0]) {
+    case 'A': case 'a':
+      if (!WOKWI_SIM) {
+        port.println(F("{\"error\":\"the tour fakes obstacles, it only runs in the simulation\"}"));
+      } else if (tourOn) {
+        stopTour(port);
+      } else {
+        tourOn = true;
+        demoMode = false;
+        tourStep = 0;
+        tourStepMs = 0;
+      }
+      break;
     case 'V': case 'v':
       if (twoNumbers(s + 1, a, b)) {
         cmdV = constrain(a, -0.5f, WHEEL_MAX_SPEED);
@@ -472,6 +654,13 @@ void setup() {
   Serial.print(imuOk ? F("true") : F("false"));
   Serial.println('}');
   printHelp(Serial);
+  if (tourOn) {
+    Serial.println();
+    Serial.println(F("AUTOMATIC TOUR: the robot now shows every safety rule on its own,"));
+    Serial.println(F("12 steps in about 46 s, then it repeats. Just watch the LEDs and read here."));
+    Serial.println(F("The LEDs are the motors: green = wheel forward, red = wheel backward,"));
+    Serial.println(F("brighter = faster. Type S to stop the tour, A to start it again."));
+  }
 }
 
 void loop() {
@@ -484,6 +673,7 @@ void loop() {
   if (now - lastControlMs >= 20) {             // 50 Hz control loop
     float dt = min((now - lastControlMs) / 1000.0f, 0.05f);  // first pass after boot
     lastControlMs = now;
+    tourUpdate(now);
     updateImu(dt);
     updateBattery();
     applySafety();
@@ -496,5 +686,11 @@ void loop() {
   if (now - lastTelemetryMs >= 100) {          // 10 Hz telemetry, like the backend sensors
     lastTelemetryMs = now;
     if (telemetryOn) sendTelemetry();
+  }
+
+  static unsigned long lastStatusMs = 0;
+  if (tourOn && now - lastStatusMs >= 500) {   // readable status line during the tour
+    lastStatusMs = now;
+    tourStatus(*host, now);
   }
 }
