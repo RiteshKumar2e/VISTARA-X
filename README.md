@@ -42,6 +42,22 @@ Autonomous robots must understand their surroundings, identify relevant objects 
 
 The system runs entirely in simulation, with module boundaries designed for later integration of real cameras, depth sensors, LiDAR and motor controllers.
 
+![Reactive robot vs VISTARA-X](docs/problem-reactive-vs-predictive.png)
+
+**A delivery mission, step by step:**
+
+![Mission workflow](docs/mission-workflow.png)
+
+**System architecture:**
+
+![System architecture](docs/system-architecture.png)
+
+**The live dashboard during the judge demo** (screenshots from the running app):
+
+![Live mission](docs/screenshots/live-mission.png)
+
+![Prediction panel](docs/screenshots/prediction-panel.png)
+
 ## Features
 
 | Capability | Implementation | Status |
