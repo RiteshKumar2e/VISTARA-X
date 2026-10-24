@@ -299,6 +299,24 @@
       "attrs": {
         "text": "Battery (A0, left = full)"
       }
+    },
+    {
+      "type": "wokwi-text",
+      "id": "legend1",
+      "top": 450,
+      "left": -330,
+      "attrs": {
+        "text": "Wires:  red = 5V   black = GND   blue = TRIG   green = ECHO   purple = I2C (IMU)"
+      }
+    },
+    {
+      "type": "wokwi-text",
+      "id": "legend2",
+      "top": 475,
+      "left": -330,
+      "attrs": {
+        "text": "orange = Arduino output (motors, LED, buzzer)   cyan = E-stop input   yellow = battery voltage (A0)"
+      }
     }
   ],
   "connections": [
@@ -563,7 +581,7 @@
     [
       "estop:1.l",
       "mega:26",
-      "red",
+      "cyan",
       []
     ],
     [
