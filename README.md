@@ -8,6 +8,8 @@ VISTARA-X is a simulation-first **predictive** autonomous navigation system. It 
 >
 > Mission: understand the environment, understand the user's intention, and navigate safely toward the requested destination. No collision avoidance can be guaranteed; the results below are measured in simulation only.
 
+**Live demo:** [vistara-x.vercel.app](https://vistara-x.vercel.app) → **Live mission** → **Judge demo**. The backend runs on Render's free plan, so the first load after a quiet spell can take up to a minute. Deployment steps: [DEPLOY.md](DEPLOY.md).
+
 ---
 
 ## Contents
